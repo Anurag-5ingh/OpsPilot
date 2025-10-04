@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Terminal</title>
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    #terminal { height: 100%; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script>
+    const ip = "{{ ip }}";
+    const user = "{{ user }}";
+    const password = "{{ password }}";
+    const socket = io();
+    const term = new Terminal({ cursorBlink: true, fontSize: 14, theme: { background: "#000000" }});
+    term.open(document.getElementById('terminal'));
+
+    socket.on("connect", () => {
+      socket.emit("start_ssh", { ip, user, password });
+    });
+
+    term.onData(data => {
+      socket.emit("terminal_input", { input: data });
+    });
+
+    socket.on("terminal_output", data => {
+      term.write(data.output);
+    });
+
+    function sendResize() {
+      const cols = term.cols;
+      const rows = term.rows;
+      socket.emit("resize", { cols, rows });
+    }
+    term.onResize(sendResize);
+    setTimeout(sendResize, 200);
+    window.addEventListener('resize', () => setTimeout(sendResize, 200));
+  </script>
+</body>
+</html>
+ 
