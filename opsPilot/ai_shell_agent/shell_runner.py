@@ -4,14 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Try to import Flask-related helpers; if not available (or no app context),
-# we will gracefully skip DB-based connection lookup.
-try:
-    from flask_login import current_user
-    from ai_shell_agent.models import SSHConnection
-    HAS_FLASK_LOGIN = True
-except Exception:
-    HAS_FLASK_LOGIN = False
+# Database access removed - using environment variables only
 
 
 def create_ssh_client(host: str, user: str, port: int = 22):
@@ -35,7 +28,6 @@ def run_shell(command: str, ssh_client=None) -> tuple:
     Execute a command over SSH.
 
     - If `ssh_client` (paramiko.SSHClient) is provided, use it directly.
-    - Otherwise, try to use current_user's SSHConnection (if available and logged in).
     - Fallback: use REMOTE_HOST / REMOTE_USER from .env.
 
     Returns:
@@ -44,30 +36,13 @@ def run_shell(command: str, ssh_client=None) -> tuple:
     created_ssh = False
 
     if ssh_client is None:
-        remote_host = None
-        remote_user = None
-        remote_port = 22
-
-        # Try to fetch from logged-in user's DB record
-        if HAS_FLASK_LOGIN:
-            try:
-                if current_user.is_authenticated:
-                    conn = SSHConnection.query.filter_by(user_id=current_user.id).first()
-                    if conn:
-                        remote_host = conn.host
-                        remote_user = conn.username
-                        remote_port = int(conn.port or 22)
-            except Exception:
-                pass
-
-        # Fallback to environment variables
-        if not remote_host or not remote_user:
-            remote_host = os.getenv("REMOTE_HOST")
-            remote_user = os.getenv("REMOTE_USER")
-            try:
-                remote_port = int(os.getenv("REMOTE_PORT", 22))
-            except Exception:
-                remote_port = 22
+        # Use environment variables for SSH connection
+        remote_host = os.getenv("REMOTE_HOST")
+        remote_user = os.getenv("REMOTE_USER")
+        try:
+            remote_port = int(os.getenv("REMOTE_PORT", 22))
+        except Exception:
+            remote_port = 22
 
         if not remote_host or not remote_user:
             return "", "SSH connection failed: no host/user available"

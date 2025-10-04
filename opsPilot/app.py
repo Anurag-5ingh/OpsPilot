@@ -3,9 +3,6 @@ eventlet.monkey_patch()
 
 import os
 from flask import Flask, request, jsonify, send_from_directory
-from flask_login import LoginManager, login_required, current_user
-from ai_shell_agent.models import db, User
-from ai_shell_agent.auth import auth_bp
 from ai_shell_agent.ai_command import ask_ai_for_command
 from ai_shell_agent.shell_runner import run_shell, create_ssh_client
 from ai_shell_agent.conversation_memory import ConversationMemory
@@ -23,29 +20,12 @@ app = Flask(__name__)
 # Keep your existing memory logic
 memory = ConversationMemory(max_entries=20)
 
-# Secret key and DB config
+# Secret key config
 app.config['SECRET_KEY'] = os.environ.get("APP_SECRET", "dev_secret_change_me")
-project_root = os.path.dirname(os.path.abspath(__file__))
-sqlite_path = os.path.join(project_root, "pilot.db")
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", f"sqlite:///{sqlite_path}")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Init database
-db.init_app(app)
-
-# Login manager
-login_manager = LoginManager()
-login_manager.login_view = "auth.login"
-login_manager.init_app(app)
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
 
 # -------------------------
 # Register blueprints
 # -------------------------
-app.register_blueprint(auth_bp)
 app.register_blueprint(ssh_bp)
 
 @app.route("/")
@@ -113,15 +93,14 @@ def run():
     return jsonify({"output": output, "error": error})
 
 # -------------------------
-# Simple dashboard (for logged-in users)
+# Simple dashboard
 # -------------------------
 @app.route("/dashboard")
-@login_required
 def dashboard():
     return (
-        f"<h2>Welcome, {current_user.email}</h2>"
+        "<h2>Welcome to OpsPilot Dashboard</h2>"
         "<p>This is your dashboard. Your app's original endpoints are unchanged.</p>"
-        "<p><a href='/'>Back to app</a> | <a href='/logout'>Logout</a></p>"
+        "<p><a href='/'>Back to app</a></p>"
     )
 
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -369,6 +348,4 @@ def on_disconnect():
 # App runner
 # -------------------------
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     app.run(host="0.0.0.0", port=8080, debug=True)

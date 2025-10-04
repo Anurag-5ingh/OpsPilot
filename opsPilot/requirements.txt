@@ -1,0 +1,26 @@
+# OpsPilot Dependencies
+# Core Flask framework
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+
+# WebSocket support for real-time terminal
+Flask-SocketIO==5.3.6
+
+# Async execution support
+eventlet==0.33.3
+
+# SSH connectivity
+paramiko==3.3.1
+
+# AI/OpenAI integration
+openai==1.3.7
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Additional utilities (usually included with Python but explicitly listed)
+# json - built-in
+# os - built-in  
+# threading - built-in
+# re - built-in
+# shlex - built-in
