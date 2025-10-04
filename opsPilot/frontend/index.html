@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Shell Assistant</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
+</head>
+<body class="light">
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen">
+    <div class="login-card">
+      <div class="logo-container">
+        <img src="brain.svg" alt="Brain Logo" class="brain-logo" />
+        <span class="logo-text">opsPilot</span>
+      </div>
+      <h1>Connect to Server</h1>
+      <input id="host" type="text" placeholder="Remote Host" />
+      <input id="user" type="text" placeholder="Username" />
+      <div id="login-error" class="error-msg"></div>
+      <button id="connect-button">
+        <span class="btn-text">Connect</span>
+        <span class="spinner hidden"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Split Screen -->
+  <div id="main-screen" class="screen hidden">
+    <div class="split-container">
+      <!-- Left Panel: AI Chat -->
+      <div class="left-panel">
+        <div class="chat-header">
+          <img src="brain.svg" alt="Brain Logo" class="brain-logo" />
+          <span class="logo-text">opsPilot AI</span>
+        </div>
+        <div id="chat-container"></div>
+        <div class="chat-input-container">
+          <textarea id="user-input" rows="2" placeholder="Type a command..."></textarea>
+          <button id="ask">
+            <span class="btn-text">Ask AI</span>
+            <span class="spinner hidden"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Panel: Terminal -->
+      <div class="right-panel" id="terminal-panel">
+        <div class="terminal-header">
+          <span class="terminal-title">Terminal</span>
+          <div class="terminal-controls">
+            <button id="clear-terminal" class="control-btn">Clear</button>
+            <button id="reconnect-terminal" class="control-btn">Reconnect</button>
+          </div>
+        </div>
+        <div id="terminal-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
