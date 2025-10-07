@@ -211,6 +211,174 @@ body {
   }
 }
 
+/* Mode Toggle Buttons */
+.mode-toggle {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.mode-btn {
+  padding: 6px 16px;
+  background: #e0e0e0;
+  color: #333;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  background: #d0d0d0;
+}
+
+.mode-btn.active {
+  background: #007bff;
+  color: white;
+}
+
+/* Troubleshoot Input */
+#error-input {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  resize: vertical;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  min-height: 60px;
+}
+
+#troubleshoot-btn {
+  padding: 10px 20px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#troubleshoot-btn:hover {
+  background: #c82333;
+}
+
+/* Troubleshoot Messages */
+.message.troubleshoot-analysis {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+}
+
+.message.troubleshoot-step {
+  background: #d1ecf1;
+  border-left: 4px solid #17a2b8;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.message.troubleshoot-result {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  font-size: 12px;
+}
+
+.message.troubleshoot-result pre {
+  background: #e9ecef;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 5px 0;
+}
+
+/* Risk Level Indicators */
+.message.risk-low {
+  background: #d4edda;
+  border-left: 4px solid #28a745;
+}
+
+.message.risk-medium {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+}
+
+.message.risk-high {
+  background: #f8d7da;
+  border-left: 4px solid #dc3545;
+}
+
+/* Troubleshoot Action Buttons */
+.troubleshoot-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 15px 0;
+}
+
+.troubleshoot-action-btn {
+  padding: 10px 20px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.troubleshoot-action-btn:hover {
+  background: #218838;
+}
+
+.troubleshoot-cancel-btn {
+  padding: 10px 20px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.troubleshoot-cancel-btn:hover {
+  background: #5a6268;
+}
+
+/* Confirm Buttons (existing, enhanced) */
+.confirm-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.confirm-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.confirm-buttons button:first-child {
+  background: #28a745;
+  color: white;
+}
+
+.confirm-buttons button:first-child:hover {
+  background: #218838;
+}
+
+.confirm-buttons button:last-child {
+  background: #dc3545;
+  color: white;
+}
+
+.confirm-buttons button:last-child:hover {
+  background: #c82333;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .split-container {
@@ -221,5 +389,10 @@ body {
   .right-panel {
     width: 100%;
     height: 50vh;
+  }
+  
+  .mode-toggle {
+    margin-left: 0;
+    margin-top: 10px;
   }
 }

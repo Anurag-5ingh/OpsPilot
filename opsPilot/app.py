@@ -4,6 +4,8 @@ eventlet.monkey_patch()
 import os
 from flask import Flask, request, jsonify, send_from_directory
 from ai_shell_agent.ai_command import ask_ai_for_command
+from ai_shell_agent.ai_troubleshoot import ask_ai_for_troubleshoot
+from ai_shell_agent.troubleshoot_runner import TroubleshootWorkflow
 from ai_shell_agent.shell_runner import run_shell, create_ssh_client
 from ai_shell_agent.conversation_memory import ConversationMemory
 from ai_shell_agent.ssh import ssh_bp  # Import SSH blueprint
@@ -91,6 +93,110 @@ def run():
 
     output, error = run_shell(command, ssh_client=ssh_client)
     return jsonify({"output": output, "error": error})
+
+# -------------------------
+# NEW: Troubleshooting Feature (Separate from /ask)
+# -------------------------
+@app.route("/troubleshoot", methods=["POST"])
+def troubleshoot():
+    """
+    Analyze an error and provide troubleshooting steps.
+    This is a separate feature from single-command generation.
+    
+    Request body:
+    {
+        "error_text": "error message or description",
+        "host": "remote host",
+        "username": "ssh user",
+        "port": 22,
+        "context": {
+            "last_command": "optional",
+            "last_output": "optional",
+            "last_error": "optional"
+        }
+    }
+    """
+    data = request.get_json()
+    error_text = data.get("error_text")
+    host = data.get("host")
+    username = data.get("username")
+    port = int(data.get("port", 22))
+    context = data.get("context", {})
+    
+    if not error_text:
+        return jsonify({"error": "error_text is required"}), 400
+    
+    if not host or not username:
+        return jsonify({"error": "host and username are required"}), 400
+    
+    # Get troubleshooting plan from AI
+    result = ask_ai_for_troubleshoot(error_text, context=context)
+    
+    if not result or not result.get("success"):
+        return jsonify({
+            "error": "Failed to generate troubleshooting plan",
+            "details": result.get("error", "Unknown error")
+        }), 500
+    
+    troubleshoot_plan = result.get("troubleshoot_response", {})
+    
+    return jsonify({
+        "analysis": troubleshoot_plan.get("analysis"),
+        "diagnostic_commands": troubleshoot_plan.get("diagnostic_commands", []),
+        "fix_commands": troubleshoot_plan.get("fix_commands", []),
+        "verification_commands": troubleshoot_plan.get("verification_commands", []),
+        "reasoning": troubleshoot_plan.get("reasoning"),
+        "risk_level": troubleshoot_plan.get("risk_level"),
+        "requires_confirmation": troubleshoot_plan.get("requires_confirmation")
+    })
+
+@app.route("/troubleshoot/execute", methods=["POST"])
+def troubleshoot_execute():
+    """
+    Execute troubleshooting commands (diagnostics, fixes, or verification).
+    
+    Request body:
+    {
+        "commands": ["cmd1", "cmd2"],
+        "step_type": "diagnostic|fix|verification",
+        "host": "remote host",
+        "username": "ssh user",
+        "port": 22
+    }
+    """
+    data = request.get_json()
+    commands = data.get("commands", [])
+    step_type = data.get("step_type", "unknown")
+    host = data.get("host")
+    username = data.get("username")
+    port = int(data.get("port", 22))
+    
+    if not commands:
+        return jsonify({"error": "No commands provided"}), 400
+    
+    if not host or not username:
+        return jsonify({"error": "host and username are required"}), 400
+    
+    # Create SSH client
+    ssh_client = create_ssh_client(host, username, port)
+    if ssh_client is None:
+        return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
+    
+    # Execute commands using workflow engine
+    workflow = TroubleshootWorkflow(ssh_client)
+    
+    if step_type == "diagnostic":
+        results = workflow.run_diagnostics(commands)
+    elif step_type == "fix":
+        results = workflow.run_fixes(commands)
+    elif step_type == "verification":
+        results = workflow.run_verification(commands)
+    else:
+        results = workflow.execute_commands(commands, step_type)
+    
+    ssh_client.close()
+    
+    return jsonify(results)
 
 # -------------------------
 # Simple dashboard
