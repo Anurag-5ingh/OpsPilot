@@ -84,7 +84,7 @@ ipython_config.py
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
+#   intended to run in multiple frequenvironments; otherwise, check them in:
 # .python-version
 
 # pipenv
@@ -329,3 +329,35 @@ install_dependencies_wsl.sh
 
 # Setup guides (if you prefer not to track)
 # SETUP_GUIDE.md
+
+# OpsPilot specific
+# SSH session data
+ssh_sessions/
+*.session
+
+# Test outputs
+test_output/
+test_results/
+
+# Local configuration overrides
+config.local.py
+settings.local.py
+
+# Troubleshooting workflow artifacts
+troubleshoot_artifacts/
+workflow_logs/
+
+# User-specific SSH configs (keep template only)
+# ssh_config.template should be tracked
+# ssh_config should not
+ssh_config
+known_hosts
+
+# API keys and secrets (already covered by .env but being explicit)
+*.secret
+secrets.json
+credentials.json
+
+# Temporary command history
+.command_history
+.troubleshoot_history

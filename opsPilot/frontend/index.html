@@ -37,12 +37,27 @@
         <div class="chat-header">
           <img src="brain.svg" alt="Brain Logo" class="brain-logo" />
           <span class="logo-text">opsPilot AI</span>
+          <div class="mode-toggle">
+            <button id="mode-command" class="mode-btn active">Command</button>
+            <button id="mode-troubleshoot" class="mode-btn">Troubleshoot</button>
+          </div>
         </div>
         <div id="chat-container"></div>
-        <div class="chat-input-container">
-          <textarea id="user-input" rows="2" placeholder="Type a command..."></textarea>
+        
+        <!-- Command Mode Input (default) -->
+        <div id="command-input-container" class="chat-input-container">
+          <textarea id="user-input" rows="2" placeholder="Type a command request..."></textarea>
           <button id="ask">
             <span class="btn-text">Ask AI</span>
+            <span class="spinner hidden"></span>
+          </button>
+        </div>
+        
+        <!-- Troubleshoot Mode Input (hidden by default) -->
+        <div id="troubleshoot-input-container" class="chat-input-container hidden">
+          <textarea id="error-input" rows="3" placeholder="Paste error message or describe the problem..."></textarea>
+          <button id="troubleshoot-btn">
+            <span class="btn-text">Troubleshoot</span>
             <span class="spinner hidden"></span>
           </button>
         </div>

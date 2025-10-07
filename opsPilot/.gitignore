@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+.cache/
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.ppk
+id_rsa
+id_ecdsa
+id_ed25519
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Misc
+*.swp
+*.swo
+~$*
