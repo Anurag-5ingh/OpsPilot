@@ -1,11 +1,17 @@
-# OpsPilot
+# OpsPilot - AI-Powered DevOps Assistant
 
-OpsPilot is a Python Flask application that provides:
-- An AI-powered command generator that turns natural language into shell commands.
-- A real-time, web-based SSH terminal using Socket.IO and Paramiko.
-- A simple CLI for interactive AI-assisted remote command execution.
+OpsPilot is an intelligent DevOps assistant with two powerful features:
 
-Frontend assets live under frontend/ (served from /opspilot). Backend code is primarily in ai_shell_agent/ and app.py.
+## 🚀 Features
+
+### 1. **Command Generation** 
+AI-powered command generator that turns natural language into shell commands.
+
+### 2. **Error Troubleshooting**
+Multi-step error analysis and remediation with diagnostics, fixes, and verification.
+
+### 3. **Real-Time SSH Terminal**
+Web-based SSH terminal using Socket.IO and Paramiko for live server interaction.
 
 ## Quickstart (Windows PowerShell)
 
@@ -48,31 +54,141 @@ $env:REMOTE_USER = "ubuntu"
 $env:REMOTE_PORT = "22"
 ```
 
-## API
+## 📁 Project Structure
 
-- POST /ask
-  - Body: { "prompt": "your instruction" }
-  - Returns: { "ai_command": "generated shell command", "original_prompt": "..." }
+```
+opsPilot/
+├── ai_shell_agent/              # Backend (All backend code)
+│   ├── modules/                 # Modular organization
+│   │   ├── command_generation/  # Feature 1: Command generation
+│   │   ├── troubleshooting/     # Feature 2: Error troubleshooting
+│   │   ├── ssh/                 # SSH connection module
+│   │   └── shared/              # Shared utilities
+│   └── main_runner.py           # CLI entry point
+├── frontend/                    # Frontend
+│   ├── js/                      # JavaScript modules
+│   ├── css/                     # Stylesheets
+│   ├── assets/                  # Images and icons
+│   └── index.html               # Main HTML
+├── app.py                       # Flask application
+├── main.py                      # CLI entrypoint
+└── requirements.txt             # Dependencies
+```
 
-- POST /run
-  - Body: { "host": "x.x.x.x", "username": "user", "command": "echo hello" }
-  - Returns: { "output": "...", "error": "..." }
+## 📡 API Endpoints
 
-## Real-time SSH terminal
+### Command Generation
+- **POST /ask** - Generate command from natural language
+  - Body: `{ "prompt": "list all files" }`
+  - Returns: `{ "ai_command": "ls -la", ... }`
 
-The web UI uses Socket.IO to establish a live SSH session:
-- start_ssh: opens the SSH session and pty
-- terminal_input: streams keystrokes to the remote shell
-- resize: updates terminal dimensions
-- disconnect: cleans up the session
+- **POST /run** - Execute command via SSH
+  - Body: `{ "host": "10.0.0.1", "username": "ubuntu", "command": "ls" }`
+  - Returns: `{ "output": "...", "error": "..." }`
 
-## Project structure (high level)
+### Troubleshooting
+- **POST /troubleshoot** - Analyze error and create remediation plan
+  - Body: `{ "error_text": "nginx failed", "host": "...", "username": "..." }`
+  - Returns: `{ "analysis": "...", "diagnostic_commands": [...], "fix_commands": [...], ... }`
 
-- app.py: Flask app, HTTP routes, Socket.IO events for SSH terminal
-- ai_shell_agent/: AI integration, SSH helpers, CLI loop, conversation memory
-- frontend/: Static assets (index.html expected, app.js provided)
-- main.py: CLI entrypoint
+- **POST /troubleshoot/execute** - Execute troubleshooting workflow steps
+  - Body: `{ "commands": [...], "step_type": "diagnostic|fix|verification", ... }`
+  - Returns: `{ "results": [...], "all_success": true }`
 
-## Notes
-- No test suite or lint configuration is included yet.
-- If you change AI provider or credentials, update ai_shell_agent/ai_command.py accordingly.
+### SSH Management
+- **GET /ssh/list** - List saved SSH connections
+- **POST /ssh/save** - Save SSH connection info
+- **DELETE /ssh/delete/<id>** - Delete SSH connection
+
+### WebSocket Events (Terminal)
+- `start_ssh` - Open SSH session
+- `terminal_input` - Send keystrokes
+- `terminal_output` - Receive output
+- `resize` - Update terminal size
+- `disconnect` - Close session
+
+## 🏗️ Architecture
+
+### Backend Modules
+
+**Command Generation** (`ai_shell_agent/modules/command_generation/`)
+- Converts natural language to shell commands
+- Uses GPT-4o-mini with temperature 0.3
+- Returns structured JSON with command and explanation
+
+**Troubleshooting** (`ai_shell_agent/modules/troubleshooting/`)
+- Analyzes errors and creates multi-step remediation plans
+- Uses GPT-4o-mini with temperature 0.2
+- Workflow: Diagnostics → Fixes → Verification
+- Risk assessment (low/medium/high)
+
+**SSH** (`ai_shell_agent/modules/ssh/`)
+- SSH client creation and management
+- Command execution over SSH
+- Session management endpoints
+
+**Shared** (`ai_shell_agent/modules/shared/`)
+- Conversation memory (max 20 entries)
+- Utility functions (path normalization, etc.)
+
+### Frontend Modules
+
+- **main.js** - Application entry point and event listeners
+- **utils.js** - Shared state and utilities
+- **terminal.js** - SSH terminal functionality
+- **command-mode.js** - Command generation UI
+- **troubleshoot-mode.js** - Troubleshooting UI
+
+## 🔧 Technology Stack
+
+**Backend:**
+- Python 3.x
+- Flask - Web framework
+- Flask-SocketIO - WebSocket support
+- Paramiko - SSH client
+- OpenAI API - AI capabilities
+- Eventlet - Async support
+
+**Frontend:**
+- HTML5, CSS3, Vanilla JavaScript
+- Socket.IO Client - WebSocket
+- xterm.js - Terminal emulator
+
+## 🎯 Usage
+
+### Web Interface
+
+1. Navigate to `http://localhost:8080/opspilot`
+2. Enter SSH credentials (host, username)
+3. Choose mode:
+   - **Command Mode**: Generate commands from natural language
+   - **Troubleshoot Mode**: Analyze and fix errors
+
+### Command Mode
+1. Type natural language request: "list all files"
+2. AI generates command: `ls -la`
+3. Confirm to execute in terminal
+
+### Troubleshoot Mode
+1. Paste error message: "nginx: bind() failed"
+2. AI analyzes and creates plan:
+   - Analysis of root cause
+   - Diagnostic commands
+   - Fix commands
+   - Verification commands
+3. Execute steps with confirmation
+
+## 🔐 Security
+
+- SSH key-based or password authentication
+- User confirmation required for command execution
+- Risk level assessment for troubleshooting
+- API key protection for OpenAI
+- Flask secret key configuration
+
+## 📝 Notes
+
+- AI provider: OpenAI GPT-4o-mini (Bosch internal endpoint)
+- To change AI provider, update `ai_shell_agent/modules/*/ai_handler.py`
+- Conversation memory limited to 20 entries for performance
+- All features work independently without conflicts

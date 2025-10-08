@@ -1,22 +1,34 @@
 """
-AI handler specifically for troubleshooting errors.
-Separate from the single-command generation logic.
+AI Handler for Troubleshooting Module
+Handles error analysis and multi-step remediation
 """
 import json
 from dotenv import load_dotenv
 from openai import OpenAI
-from ai_shell_agent.prompt_troubleshoot import get_troubleshoot_prompt
+from .prompts import get_troubleshoot_prompt
 
 load_dotenv()
 
-# GPT-4o-mini client setup (same as ai_command.py)
-client = OpenAI(
-    base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-    api_key="dummy",
-    default_headers={
-        "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-    },
-)
+# GPT-4o-mini client setup
+try:
+    client = OpenAI(
+        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
+        api_key="dummy",
+        default_headers={
+            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
+        }
+    )
+except TypeError:
+    # Fallback for older OpenAI library versions
+    import httpx
+    client = OpenAI(
+        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
+        api_key="dummy",
+        default_headers={
+            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
+        },
+        http_client=httpx.Client()
+    )
 
 
 def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list = None) -> dict:

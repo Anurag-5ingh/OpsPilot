@@ -1,3 +1,7 @@
+"""
+Prompts for Troubleshooting Module
+"""
+
 def get_troubleshoot_prompt():
     """
     System prompt specifically for error troubleshooting and diagnosis.

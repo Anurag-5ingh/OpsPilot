@@ -1,24 +1,48 @@
-# ai_command.py
+"""
+AI Handler for Command Generation
+Generates single commands from natural language input
+"""
 import json
 from dotenv import load_dotenv
 from openai import OpenAI
-from ai_shell_agent.prompt_config import get_system_prompt
+from .prompts import get_system_prompt
 
 # Load environment variables
 load_dotenv()
 
-# GPT-4o-mini client setup (Bosch internal)
-client = OpenAI(
-    base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-    api_key="dummy",
-    default_headers={
-        "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-    },
-)
+# GPT-4o-mini client setup
+try:
+    client = OpenAI(
+        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
+        api_key="dummy",
+        default_headers={
+            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
+        }
+    )
+except TypeError:
+    # Fallback for older OpenAI library versions
+    import httpx
+    client = OpenAI(
+        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
+        api_key="dummy",
+        default_headers={
+            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
+        },
+        http_client=httpx.Client()
+    )
 
-# Ask GPT to understand the user instruction and generate a shell command
-# ai_shell_agent/ai_command.py
+
 def ask_ai_for_command(user_input: str, memory: list = None) -> dict:
+    """
+    Ask AI to generate a single command from natural language input.
+    
+    Args:
+        user_input: Natural language command request
+        memory: Optional conversation history
+        
+    Returns:
+        dict with ai_response and raw_ai_output
+    """
     system_prompt = get_system_prompt()
 
     # Prepare message history
@@ -37,7 +61,7 @@ def ask_ai_for_command(user_input: str, memory: list = None) -> dict:
             messages=messages,
             extra_query={"api-version": "2024-08-01-preview"},
             temperature=0.3,
-            response_format={"type": "json_object"}  # ✅ Force JSON response
+            response_format={"type": "json_object"}
         )
 
         content = response.choices[0].message.content.strip()
