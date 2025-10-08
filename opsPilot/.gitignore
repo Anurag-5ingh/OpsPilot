@@ -31,7 +31,7 @@ id_ecdsa
 id_ed25519
 
 # Editors/OS
-.vscode/
+vscode/
 .idea/
 .DS_Store
 Thumbs.db
@@ -44,7 +44,38 @@ npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Testing
+tests/
+test_*.py
+*_test.py
+playwright-report/
+test-results/
+coverage/
+htmlcov/
+.nyc_output/
+*.spec.js
+*.test.js
+TEST_RESULTS.md
+
+# Playwright
+tests/node_modules/
+tests/playwright-report/
+tests/test-results/
+tests/.cache/
+tests/package-lock.json
+
+# Test artifacts
+screenshots/
+videos/
+traces/
+
 # Misc
 *.swp
 *.swo
 ~$*
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/playwright/.auth/

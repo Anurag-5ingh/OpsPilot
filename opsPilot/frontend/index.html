@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>AI Shell Assistant</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
@@ -15,7 +15,7 @@
   <div id="login-screen" class="screen">
     <div class="login-card">
       <div class="logo-container">
-        <img src="brain.svg" alt="Brain Logo" class="brain-logo" />
+        <img src="assets/brain.svg" alt="Brain Logo" class="brain-logo" />
         <span class="logo-text">opsPilot</span>
       </div>
       <h1>Connect to Server</h1>
@@ -35,7 +35,7 @@
       <!-- Left Panel: AI Chat -->
       <div class="left-panel">
         <div class="chat-header">
-          <img src="brain.svg" alt="Brain Logo" class="brain-logo" />
+          <img src="assets/brain.svg" alt="Brain Logo" class="brain-logo" />
           <span class="logo-text">opsPilot AI</span>
           <div class="mode-toggle">
             <button id="mode-command" class="mode-btn active">Command</button>
@@ -77,6 +77,11 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- Load modular JavaScript files -->
+  <script src="js/utils.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/command-mode.js"></script>
+  <script src="js/troubleshoot-mode.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

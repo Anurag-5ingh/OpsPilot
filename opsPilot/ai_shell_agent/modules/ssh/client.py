@@ -1,15 +1,25 @@
+"""
+SSH Client Module
+Handles SSH connection creation and command execution
+"""
 import os
 import paramiko
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database access removed - using environment variables only
-
 
 def create_ssh_client(host: str, user: str, port: int = 22):
     """
     Create and return a connected paramiko.SSHClient or None on failure.
+    
+    Args:
+        host: Remote host address
+        user: SSH username
+        port: SSH port (default 22)
+        
+    Returns:
+        paramiko.SSHClient or None
     """
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -30,8 +40,12 @@ def run_shell(command: str, ssh_client=None) -> tuple:
     - If `ssh_client` (paramiko.SSHClient) is provided, use it directly.
     - Fallback: use REMOTE_HOST / REMOTE_USER from .env.
 
+    Args:
+        command: Shell command to execute
+        ssh_client: Optional existing SSH client
+        
     Returns:
-        (stdout_str, stderr_str)
+        tuple: (stdout_str, stderr_str)
     """
     created_ssh = False
 

@@ -3,12 +3,11 @@ eventlet.monkey_patch()
 
 import os
 from flask import Flask, request, jsonify, send_from_directory
-from ai_shell_agent.ai_command import ask_ai_for_command
-from ai_shell_agent.ai_troubleshoot import ask_ai_for_troubleshoot
-from ai_shell_agent.troubleshoot_runner import TroubleshootWorkflow
-from ai_shell_agent.shell_runner import run_shell, create_ssh_client
-from ai_shell_agent.conversation_memory import ConversationMemory
-from ai_shell_agent.ssh import ssh_bp  # Import SSH blueprint
+# Import from modular structure inside ai_shell_agent
+from ai_shell_agent.modules.command_generation import ask_ai_for_command
+from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, TroubleshootWorkflow
+from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
+from ai_shell_agent.modules.shared import ConversationMemory
 
 from flask import render_template, redirect, url_for
 from flask_socketio import SocketIO, emit

@@ -1,4 +1,9 @@
+"""
+Prompts for Command Generation Module
+"""
+
 def get_system_prompt():
+    """System prompt for single command generation"""
     return (
         "You are a smart Linux shell assistant.\n"
         "Your task is to understand the user's instruction and respond with ONLY a valid JSON object (no explanation, no prefix like 'AI:').\n"
