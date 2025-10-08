@@ -12,7 +12,9 @@ const state = {
   terminal: null,
   terminalConnected: false,
   currentMode: "command", // "command" or "troubleshoot"
-  troubleshootPlan: null
+  troubleshootPlan: null,
+  serverProfile: null,
+  systemAware: false
 };
 
 /**
@@ -71,7 +73,109 @@ function toggleMode(mode) {
   }
 }
 
+/**
+ * Profile the server and update system awareness
+ */
+async function profileServer(host, username, port = 22, forceRefresh = false) {
+  try {
+    const response = await fetch("/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        host: host,
+        username: username,
+        port: port,
+        force_refresh: forceRefresh
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      state.serverProfile = result.profile;
+      state.systemAware = true;
+      
+      // Show system summary in UI
+      showSystemSummary(result.summary);
+      
+      return result;
+    } else {
+      console.error("Server profiling failed:", result.error);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error profiling server:", error);
+    return null;
+  }
+}
+
+/**
+ * Show system summary in the UI
+ */
+function showSystemSummary(summary) {
+  const container = document.getElementById("chat-container");
+  const msg = document.createElement("div");
+  msg.className = "message system-info";
+  msg.innerHTML = `
+    <div class="system-summary">
+      <h4>🔍 Server Profile Discovered</h4>
+      <pre>${summary}</pre>
+    </div>
+  `;
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Get command suggestions for a category
+ */
+async function getCommandSuggestions(category) {
+  try {
+    const response = await fetch(`/profile/suggestions/${category}`);
+    const result = await response.json();
+    return result.suggestions || [];
+  } catch (error) {
+    console.error("Error getting suggestions:", error);
+    return [];
+  }
+}
+
+/**
+ * Update UI to show system awareness status
+ */
+function updateSystemAwarenessUI() {
+  const header = document.querySelector(".chat-header");
+  let statusIndicator = header.querySelector(".system-status");
+  
+  if (!statusIndicator) {
+    statusIndicator = document.createElement("div");
+    statusIndicator.className = "system-status";
+    header.appendChild(statusIndicator);
+  }
+  
+  if (state.systemAware) {
+    statusIndicator.innerHTML = `
+      <span class="status-indicator online">🟢</span>
+      <span class="status-text">System Aware</span>
+    `;
+  } else {
+    statusIndicator.innerHTML = `
+      <span class="status-indicator offline">🔴</span>
+      <span class="status-text">Generic Mode</span>
+    `;
+  }
+}
+
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { state, setButtonLoading, appendMessage, toggleMode };
+  module.exports = { 
+    state, 
+    setButtonLoading, 
+    appendMessage, 
+    toggleMode, 
+    profileServer, 
+    showSystemSummary, 
+    getCommandSuggestions,
+    updateSystemAwarenessUI
+  };
 }
