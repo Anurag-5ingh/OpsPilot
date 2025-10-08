@@ -1,6 +1,6 @@
 """
 AI Handler for Command Generation
-Generates single commands from natural language input
+Generates single commands from natural language input with server awareness
 """
 import json
 from dotenv import load_dotenv
@@ -32,18 +32,30 @@ except TypeError:
     )
 
 
-def ask_ai_for_command(user_input: str, memory: list = None) -> dict:
+def ask_ai_for_command(user_input: str, memory: list = None, system_context=None) -> dict:
     """
     Ask AI to generate a single command from natural language input.
     
     Args:
         user_input: Natural language command request
         memory: Optional conversation history
+        system_context: Optional SystemContextManager for server awareness
         
     Returns:
         dict with ai_response and raw_ai_output
     """
-    system_prompt = get_system_prompt()
+    # Get base system prompt
+    base_prompt = get_system_prompt()
+    
+    # Enhance prompt with server context if available
+    if system_context and hasattr(system_context, 'enhance_ai_prompt'):
+        system_prompt = system_context.enhance_ai_prompt(
+            base_prompt, 
+            "command_generation", 
+            user_request=user_input
+        )
+    else:
+        system_prompt = base_prompt
 
     # Prepare message history
     messages = [{"role": "system", "content": system_prompt}]

@@ -31,7 +31,7 @@ except TypeError:
     )
 
 
-def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list = None) -> dict:
+def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list = None, system_context=None) -> dict:
     """
     Ask AI to troubleshoot an error and provide diagnostic/fix commands.
     
@@ -43,6 +43,7 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
             - last_error: stderr from the command
             - diagnostic_results: Output from previous diagnostic commands
         history: Optional list of previous troubleshooting steps
+        system_context: Optional SystemContextManager for server awareness
     
     Returns:
         dict with:
@@ -50,7 +51,19 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
             - raw_output: Raw AI response
             - success: Boolean indicating if parsing succeeded
     """
-    system_prompt = get_troubleshoot_prompt()
+    # Get base troubleshooting prompt
+    base_prompt = get_troubleshoot_prompt()
+    
+    # Enhance prompt with server context if available
+    if system_context and hasattr(system_context, 'enhance_ai_prompt'):
+        system_prompt = system_context.enhance_ai_prompt(
+            base_prompt,
+            "troubleshooting",
+            error_text=error_text,
+            additional_context=context
+        )
+    else:
+        system_prompt = base_prompt
     
     # Build user message with context
     user_message = f"Error to troubleshoot:\n{error_text}\n"

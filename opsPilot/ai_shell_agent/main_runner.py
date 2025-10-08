@@ -1,14 +1,16 @@
 # main_runner.py
-from ai_shell_agent.ai_command import ask_ai_for_command
-from ai_shell_agent.shell_runner import run_shell, create_ssh_client
-from ai_shell_agent.conversation_memory import ConversationMemory
+from ai_shell_agent.modules.command_generation import ask_ai_for_command
+from ai_shell_agent.modules.ssh import run_shell, create_ssh_client
+from ai_shell_agent.modules.shared import ConversationMemory
+from ai_shell_agent.modules.system_awareness import SystemContextManager
 import paramiko
 
 def main():
     print("AI Local Shell — type 'exit' to quit\n")
 
-    # Initialize conversation memory
+    # Initialize conversation memory and system context
     memory = ConversationMemory(max_entries=20)
+    system_context = SystemContextManager()
 
     # Prompt for SSH details
     remote_host = input("Enter REMOTE_HOST (e.g., 10.0.0.1): ").strip()
@@ -20,12 +22,22 @@ def main():
         print("SSH client was not properly initialized. Exiting.")
         return
 
+    # Profile the server for system awareness
+    print("\n🔍 Profiling server for better command suggestions...")
+    try:
+        profile = system_context.initialize_context(ssh, force_refresh=False)
+        print("✅ Server profiled successfully!")
+        print(f"📊 System Summary:\n{system_context.get_system_summary()}")
+    except Exception as e:
+        print(f"⚠️ Server profiling failed: {e}")
+        print("Continuing in generic mode...")
+
     while True:
         user_input = input("What do you want to do? ").strip()
         if user_input.lower() in {"exit", "quit"}:
             break
 
-        result = ask_ai_for_command(user_input, memory.get())
+        result = ask_ai_for_command(user_input, memory.get(), system_context=system_context)
         if not result:
             print("Failed to get a valid response from AI.")
             continue

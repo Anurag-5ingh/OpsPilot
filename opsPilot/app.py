@@ -8,6 +8,7 @@ from ai_shell_agent.modules.command_generation import ask_ai_for_command
 from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, TroubleshootWorkflow
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
+from ai_shell_agent.modules.system_awareness import SystemContextManager
 
 from flask import render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
@@ -20,6 +21,9 @@ app = Flask(__name__)
 
 # Keep your existing memory logic
 memory = ConversationMemory(max_entries=20)
+
+# Initialize system context manager
+system_context = SystemContextManager()
 
 # Secret key config
 app.config['SECRET_KEY'] = os.environ.get("APP_SECRET", "dev_secret_change_me")
@@ -53,7 +57,7 @@ def ask():
     if not user_input:
         return jsonify({"error": "No prompt provided"}), 400
 
-    result = ask_ai_for_command(user_input, memory=memory.get())
+    result = ask_ai_for_command(user_input, memory=memory.get(), system_context=system_context)
     if not result:
         return jsonify({"error": "AI failed to respond"}), 500
 
@@ -129,7 +133,7 @@ def troubleshoot():
         return jsonify({"error": "host and username are required"}), 400
     
     # Get troubleshooting plan from AI
-    result = ask_ai_for_troubleshoot(error_text, context=context)
+    result = ask_ai_for_troubleshoot(error_text, context=context, system_context=system_context)
     
     if not result or not result.get("success"):
         return jsonify({
@@ -196,6 +200,77 @@ def troubleshoot_execute():
     ssh_client.close()
     
     return jsonify(results)
+
+# -------------------------
+# NEW: System Awareness Endpoints
+# -------------------------
+@app.route("/profile", methods=["POST"])
+def profile_server():
+    """
+    Profile the server to understand its capabilities and configuration.
+    
+    Request body:
+    {
+        "host": "remote host",
+        "username": "ssh user", 
+        "port": 22,
+        "force_refresh": false
+    }
+    """
+    data = request.get_json()
+    host = data.get("host")
+    username = data.get("username")
+    port = int(data.get("port", 22))
+    force_refresh = data.get("force_refresh", False)
+    
+    if not host or not username:
+        return jsonify({"error": "host and username are required"}), 400
+    
+    # Create SSH client
+    ssh_client = create_ssh_client(host, username, port)
+    if ssh_client is None:
+        return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
+    
+    try:
+        # Initialize system context with this connection
+        profile = system_context.initialize_context(ssh_client, force_refresh=force_refresh)
+        
+        return jsonify({
+            "success": True,
+            "profile": profile,
+            "summary": system_context.get_system_summary()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    finally:
+        ssh_client.close()
+
+@app.route("/profile/summary", methods=["GET"])
+def get_profile_summary():
+    """Get a summary of the current server profile"""
+    summary = system_context.get_system_summary()
+    profile = system_context.get_current_profile()
+    
+    return jsonify({
+        "summary": summary,
+        "has_profile": profile is not None,
+        "confidence": profile.get("confidence_score", 0) if profile else 0
+    })
+
+@app.route("/profile/suggestions/<category>", methods=["GET"])
+def get_command_suggestions(category):
+    """Get server-specific command suggestions for a category"""
+    suggestions = system_context.get_command_suggestions(category)
+    
+    return jsonify({
+        "category": category,
+        "suggestions": suggestions,
+        "server_aware": system_context.get_current_profile() is not None
+    })
 
 # -------------------------
 # Simple dashboard

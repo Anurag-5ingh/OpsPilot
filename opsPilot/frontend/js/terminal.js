@@ -119,6 +119,18 @@ function connectSSH() {
         // Initialize terminal
         initializeTerminal();
         
+        // Profile the server for system awareness
+        profileServer(state.currentHost, state.currentUser)
+          .then(profile => {
+            if (profile) {
+              updateSystemAwarenessUI();
+              appendMessage("✅ Server profiled successfully! AI is now system-aware.", "system");
+            } else {
+              appendMessage("⚠️ Server profiling failed. Using generic mode.", "system");
+              updateSystemAwarenessUI();
+            }
+          });
+        
         // Focus on chat input
         document.getElementById("user-input").focus();
       } else {

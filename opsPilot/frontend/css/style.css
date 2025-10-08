@@ -25,6 +25,26 @@ body {
   gap: 10px;
 }
 
+/* System Awareness Status */
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.05);
+  font-size: 0.8rem;
+}
+
+.status-indicator {
+  font-size: 0.7rem;
+}
+
+.status-text {
+  font-weight: 500;
+}
+
 .brain-logo {
   width: 30px;
   height: 30px;
@@ -129,6 +149,31 @@ body {
   background: #fff3e0;
   text-align: center;
   font-style: italic;
+}
+
+.message.system-info {
+  background: #e8f5e8;
+  border-left: 4px solid #4caf50;
+  margin: 10px 0;
+}
+
+.system-summary {
+  text-align: left;
+}
+
+.system-summary h4 {
+  margin: 0 0 10px 0;
+  color: #2e7d32;
+}
+
+.system-summary pre {
+  background: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 /* Terminal Panel */
