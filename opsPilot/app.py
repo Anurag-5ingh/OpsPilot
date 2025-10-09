@@ -2,6 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import os
+import time
 from flask import Flask, request, jsonify, send_from_directory
 # Import from modular structure inside ai_shell_agent
 from ai_shell_agent.modules.command_generation import ask_ai_for_command
@@ -9,6 +10,7 @@ from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, Trou
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
+from ai_shell_agent.modules.pipeline_healing import PipelineMonitor, AutonomousHealer
 
 from flask import render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
@@ -24,6 +26,10 @@ memory = ConversationMemory(max_entries=20)
 
 # Initialize system context manager
 system_context = SystemContextManager()
+
+# Initialize pipeline healing system
+pipeline_healer = AutonomousHealer(system_context)
+pipeline_monitor = PipelineMonitor(healer=pipeline_healer)
 
 # Secret key config
 app.config['SECRET_KEY'] = os.environ.get("APP_SECRET", "dev_secret_change_me")
@@ -75,22 +81,23 @@ def ask():
     })
 
 @app.route("/run", methods=["POST"])
-def run():
+def run_command():
     """
     Execute a shell command on the remote server.
     Accepts `host`, `username`, `port` (optional, default 22), and `command`.
     """
     data = request.get_json()
-    command = data.get("command")
     host = data.get("host")
     username = data.get("username")
-    port = int(data.get("port", 22))
+    password = data.get("password")
+    command = data.get("command")
+    port = data.get("port", 22)
 
-    if not command or not host or not username:
+    if not host or not username or not command:
         return jsonify({"error": "host, username, and command are required"}), 400
 
     # Create SSH client and execute command
-    ssh_client = create_ssh_client(host, username, port)
+    ssh_client = create_ssh_client(host, username, port, password)
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
 
@@ -172,6 +179,7 @@ def troubleshoot_execute():
     step_type = data.get("step_type", "unknown")
     host = data.get("host")
     username = data.get("username")
+    password = data.get("password")
     port = int(data.get("port", 22))
     
     if not commands:
@@ -181,7 +189,7 @@ def troubleshoot_execute():
         return jsonify({"error": "host and username are required"}), 400
     
     # Create SSH client
-    ssh_client = create_ssh_client(host, username, port)
+    ssh_client = create_ssh_client(host, username, port, password)
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
     
@@ -220,6 +228,7 @@ def profile_server():
     data = request.get_json()
     host = data.get("host")
     username = data.get("username")
+    password = data.get("password")
     port = int(data.get("port", 22))
     force_refresh = data.get("force_refresh", False)
     
@@ -227,7 +236,7 @@ def profile_server():
         return jsonify({"error": "host and username are required"}), 400
     
     # Create SSH client
-    ssh_client = create_ssh_client(host, username, port)
+    ssh_client = create_ssh_client(host, username, port, password)
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
     
@@ -271,6 +280,113 @@ def get_command_suggestions(category):
         "suggestions": suggestions,
         "server_aware": system_context.get_current_profile() is not None
     })
+
+# -------------------------
+# NEW: Pipeline Healing Endpoints
+# -------------------------
+@app.route("/pipeline/webhook", methods=["POST"])
+def pipeline_webhook():
+    """
+    Receive pipeline failure webhooks and trigger healing
+    
+    Request body:
+    {
+        "source": "jenkins/ansible/gitlab",
+        "job_name": "web-app-deployment",
+        "build_number": 123,
+        "stage": "Deploy",
+        "error_message": "Package installation failed",
+        "console_output": "...",
+        "target_hosts": ["web-server-01"]
+    }
+    """
+    try:
+        webhook_data = request.get_json()
+        
+        if not webhook_data:
+            return jsonify({"error": "No webhook data provided"}), 400
+        
+        # Handle the webhook through pipeline monitor
+        result = pipeline_monitor.handle_webhook_failure(webhook_data)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": time.time()
+        }), 500
+
+@app.route("/pipeline/status", methods=["GET"])
+def pipeline_status():
+    """Get pipeline healing system status"""
+    stats = pipeline_monitor.get_monitoring_stats()
+    
+    return jsonify({
+        "pipeline_healing": stats,
+        "system_context": {
+            "has_profile": system_context.get_current_profile() is not None,
+            "summary": system_context.get_system_summary() if system_context.get_current_profile() else "No profile"
+        }
+    })
+
+@app.route("/pipeline/healing/history", methods=["GET"])
+def healing_history():
+    """Get healing history"""
+    limit = request.args.get("limit", 20, type=int)
+    history = pipeline_healer.get_healing_history(limit)
+    
+    return jsonify({
+        "healing_history": history,
+        "success_rate": pipeline_healer.get_success_rate(),
+        "total_sessions": len(history)
+    })
+
+@app.route("/pipeline/test/trigger", methods=["POST"])
+def test_trigger_healing():
+    """
+    Test endpoint to trigger healing manually
+    
+    Request body:
+    {
+        "error_type": "package_failure",
+        "host": "test-server",
+        "error_message": "Package not found"
+    }
+    """
+    try:
+        test_data = request.get_json()
+        
+        # Create test error info
+        error_info = {
+            "timestamp": time.time(),
+            "source": "test",
+            "task_name": "Test Healing",
+            "host": test_data.get("host", "test-server"),
+            "module": "test",
+            "raw_error": test_data.get("error_message", "Test error"),
+            "error_category": test_data.get("error_type", "unknown"),
+            "severity": "medium"
+        }
+        
+        # Trigger healing
+        healing_result = pipeline_healer.heal_error(
+            error_info=error_info,
+            target_hosts=[error_info["host"]]
+        )
+        
+        return jsonify({
+            "test_triggered": True,
+            "error_info": error_info,
+            "healing_result": healing_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "test_triggered": False,
+            "error": str(e)
+        }), 500
 
 # -------------------------
 # Simple dashboard

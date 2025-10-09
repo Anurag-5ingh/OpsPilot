@@ -8,6 +8,7 @@ const state = {
   currentCommand: "",
   currentHost: "",
   currentUser: "",
+  currentPassword: "",
   socket: null,
   terminal: null,
   terminalConnected: false,
@@ -76,7 +77,7 @@ function toggleMode(mode) {
 /**
  * Profile the server and update system awareness
  */
-async function profileServer(host, username, port = 22, forceRefresh = false) {
+async function profileServer(host, username, port = 22, forceRefresh = false, password = "") {
   try {
     const response = await fetch("/profile", {
       method: "POST",
@@ -85,7 +86,8 @@ async function profileServer(host, username, port = 22, forceRefresh = false) {
         host: host,
         username: username,
         port: port,
-        force_refresh: forceRefresh
+        force_refresh: forceRefresh,
+        password: password
       })
     });
 
@@ -110,6 +112,7 @@ async function profileServer(host, username, port = 22, forceRefresh = false) {
 }
 
 /**
+ * Profile the server for system awareness
  * Show system summary in the UI
  */
 function showSystemSummary(summary) {

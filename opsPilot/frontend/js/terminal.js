@@ -83,17 +83,19 @@ function reconnectTerminal() {
 function connectSSH() {
   const host = document.getElementById("host").value.trim();
   const user = document.getElementById("user").value.trim();
+  const password = document.getElementById("password").value.trim();
   const errorMsg = document.getElementById("login-error");
   const connectBtn = document.getElementById("connect-button");
 
   if (!host || !user) {
-    errorMsg.textContent = "Both fields are required.";
+    errorMsg.textContent = "Host and username are required.";
     return;
   }
 
   // Save credentials for later use
   state.currentHost = host;
   state.currentUser = user;
+  state.currentPassword = password;
 
   errorMsg.textContent = "";
   setButtonLoading(connectBtn, true);
@@ -105,6 +107,7 @@ function connectSSH() {
     body: JSON.stringify({
       host: state.currentHost,
       username: state.currentUser,
+      password: state.currentPassword,
       command: "echo connected"
     }),
   })
