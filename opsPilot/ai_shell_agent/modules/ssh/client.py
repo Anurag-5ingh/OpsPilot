@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def create_ssh_client(host: str, user: str, port: int = 22):
+def create_ssh_client(host: str, user: str, port: int = 22, password: str = None):
     """
     Create and return a connected paramiko.SSHClient or None on failure.
     
@@ -17,6 +17,7 @@ def create_ssh_client(host: str, user: str, port: int = 22):
         host: Remote host address
         user: SSH username
         port: SSH port (default 22)
+        password: SSH password (optional)
         
     Returns:
         paramiko.SSHClient or None
@@ -25,7 +26,10 @@ def create_ssh_client(host: str, user: str, port: int = 22):
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     try:
-        ssh.connect(host, username=user, port=port)
+        if password:
+            ssh.connect(host, username=user, port=port, password=password)
+        else:
+            ssh.connect(host, username=user, port=port)
         print(f"SSH connection established to {user}@{host}:{port}")
         return ssh
     except Exception as e:
