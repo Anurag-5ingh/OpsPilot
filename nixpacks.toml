@@ -8,4 +8,4 @@ cmds = [
 ]
 
 [start]
-cmp = "python opsPilot/app.py"
+cmd = "python opsPilot/app.py"
