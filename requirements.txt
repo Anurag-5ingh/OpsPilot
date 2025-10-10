@@ -1,6 +1,7 @@
 # OpsPilot Dependencies
 # Core Flask framework
 Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
 
 # WebSocket support for real-time terminal
 Flask-SocketIO==5.3.6
