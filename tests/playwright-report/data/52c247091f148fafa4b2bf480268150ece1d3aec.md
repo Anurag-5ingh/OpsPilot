@@ -1,0 +1,49 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - img "Brain Logo" [ref=e6]
+      - generic [ref=e7]: opsPilot AI
+      - generic [ref=e8]:
+        - button "Command" [ref=e9] [cursor=pointer]
+        - button "Troubleshoot" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]: "Error: nginx: [emerg] bind() to 0.0.0.0:80 failed"
+      - generic [ref=e13]:
+        - strong [ref=e14]: "Analysis:"
+        - text: Port 80 is already in use by another process
+      - generic [ref=e15]: "Risk Level: MEDIUM"
+      - generic [ref=e16]:
+        - strong [ref=e17]: "Reasoning:"
+        - text: Apache is likely running on port 80. Stop it first, then start nginx.
+      - generic [ref=e18]:
+        - strong [ref=e19]: "Diagnostic Commands:"
+        - text: • sudo lsof -i :80
+        - text: • sudo netstat -tlnp | grep :80
+      - generic [ref=e20]:
+        - strong [ref=e21]: "Fix Commands:"
+        - text: • sudo systemctl stop apache2
+        - text: • sudo systemctl start nginx
+      - generic [ref=e22]:
+        - strong [ref=e23]: "Verification Commands:"
+        - text: • sudo systemctl status nginx
+      - generic [ref=e24]:
+        - button "Run Diagnostics" [ref=e25] [cursor=pointer]
+        - button "Run Fixes" [ref=e26] [cursor=pointer]
+        - button "Cancel" [ref=e27] [cursor=pointer]
+    - generic [ref=e28]:
+      - textbox "Paste error message or describe the problem..." [ref=e29]
+      - button "Troubleshoot" [ref=e30] [cursor=pointer]:
+        - generic [ref=e31]: Troubleshoot
+  - generic [ref=e32]:
+    - generic [ref=e33]:
+      - generic [ref=e34]: Terminal
+      - generic [ref=e35]:
+        - button "Clear" [ref=e36] [cursor=pointer]
+        - button "Reconnect" [ref=e37] [cursor=pointer]
+    - generic [ref=e41]:
+      - generic:
+        - textbox "Terminal input"
+```
