@@ -1,0 +1,6 @@
+---
+- name: Placeholder rollback task
+  ansible.builtin.debug:
+    msg: "Rollback role invoked (integrate with OpsPilot rollback APIs)"
+
+
