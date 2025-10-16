@@ -22,6 +22,7 @@ from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, Trou
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
+from ai_shell_agent.jenkins_ci_agent import ci_bp
 
 # ===========================
 # Application Configuration
@@ -58,6 +59,11 @@ print("Smart Documentation Generator initialized successfully")
 print("Registering SSH blueprint...")
 app.register_blueprint(ssh_bp)
 print("SSH blueprint registered successfully")
+
+# Register CI blueprint for CI runs and Jenkins integration
+print("Registering CI blueprint...")
+app.register_blueprint(ci_bp)
+print("CI blueprint registered successfully")
 
 # ===========================
 # Frontend Serving Routes
