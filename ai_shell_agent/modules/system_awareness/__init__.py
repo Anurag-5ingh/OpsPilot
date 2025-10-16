@@ -1,14 +1,12 @@
 """
 System Awareness Module
-AI-powered server profiling and context management for OpsPilot
+
+Provides server profiling and context-aware command generation capabilities.
+Analyzes target servers to understand OS, package managers, services, and installed software
+for more accurate AI-generated commands and troubleshooting.
 """
 
-from .server_profiler import ServerProfiler
 from .context_manager import SystemContextManager
-from .ai_analyzer import SystemAnalyzer
+from .server_profiler import ServerProfiler
 
-__all__ = [
-    'ServerProfiler',
-    'SystemContextManager', 
-    'SystemAnalyzer'
-]
+__all__ = ['SystemContextManager', 'ServerProfiler']
