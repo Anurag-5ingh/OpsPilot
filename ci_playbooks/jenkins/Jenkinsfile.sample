@@ -1,0 +1,33 @@
+@Library('ops-pilot-lib') _
+
+pipeline {
+	agent any
+	environment {
+		OPSPILOT_URL = "http://localhost:8080"
+	}
+	stages {
+		stage('Build') {
+			steps {
+				opspilotWrap {
+					sh 'echo building...'
+				}
+			}
+		}
+		stage('Test') {
+			steps {
+				opspilotWrap {
+					sh 'echo testing...'
+				}
+			}
+		}
+		stage('Deploy') {
+			steps {
+				opspilotWrap {
+					sh 'echo deploying...'
+				}
+			}
+		}
+	}
+}
+
+

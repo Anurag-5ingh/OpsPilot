@@ -1,0 +1,14 @@
+---
+- name: Gather basic facts
+  ansible.builtin.setup:
+
+- name: Check disk usage
+  ansible.builtin.shell: df -h
+  register: disk_usage
+  changed_when: false
+
+- name: Output disk usage
+  ansible.builtin.debug:
+    var: disk_usage.stdout
+
+
