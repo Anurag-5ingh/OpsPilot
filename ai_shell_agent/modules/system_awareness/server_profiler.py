@@ -1,212 +1,379 @@
 """
 Server Profiler
-Discovers and profiles server capabilities using AI-generated discovery commands
+
+Discovers and profiles remote servers to understand their capabilities,
+operating system, installed software, and configuration.
 """
+
 import json
 import time
-from typing import Dict, List, Optional
-from .ai_analyzer import SystemAnalyzer
+from typing import Dict, List, Optional, Tuple
 
 
 class ServerProfiler:
-    """Intelligent server profiling using AI-driven discovery"""
-    
-    def __init__(self, ssh_client):
+    """
+    Profiles remote servers via SSH to gather system information
+    for context-aware command generation and troubleshooting.
+    """
+
+    def __init__(self):
+        """Initialize the server profiler."""
+        self.discovery_commands = {
+            # Operating System Detection
+            'os_info': [
+                'uname -a',
+                'cat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null || cat /etc/debian_version 2>/dev/null',
+                'lsb_release -a 2>/dev/null',
+            ],
+            
+            # Package Manager Detection
+            'package_managers': [
+                'which apt apt-get 2>/dev/null',
+                'which yum dnf 2>/dev/null', 
+                'which apk 2>/dev/null',
+                'which zypper 2>/dev/null',
+                'which pacman 2>/dev/null',
+                'which brew 2>/dev/null',
+            ],
+            
+            # Service Manager Detection
+            'service_managers': [
+                'which systemctl 2>/dev/null && echo "systemd"',
+                'which service 2>/dev/null && echo "sysvinit"', 
+                'which rc-service 2>/dev/null && echo "openrc"',
+                'ps 1 | grep -q systemd && echo "systemd" || echo "other"',
+            ],
+            
+            # System Resources
+            'system_resources': [
+                'free -h 2>/dev/null',
+                'df -h 2>/dev/null', 
+                'nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null',
+                'uptime',
+            ],
+            
+            # Network Configuration
+            'network_info': [
+                'ip addr show 2>/dev/null || ifconfig 2>/dev/null',
+                'hostname -I 2>/dev/null || hostname',
+                'cat /etc/resolv.conf 2>/dev/null | grep nameserver',
+            ],
+            
+            # Common Software Detection
+            'installed_software': [
+                'which docker 2>/dev/null',
+                'which nginx apache2 httpd 2>/dev/null',
+                'which mysql mysqld postgresql postgres 2>/dev/null',
+                'which python python3 node npm java 2>/dev/null',
+                'which git curl wget 2>/dev/null',
+            ],
+            
+            # Security and Authentication
+            'security_info': [
+                'which sudo 2>/dev/null',
+                'id',
+                'ls -la /etc/sudoers.d/ 2>/dev/null | wc -l',
+                'which firewall-cmd ufw iptables 2>/dev/null',
+            ]
+        }
+
+    def profile_server(self, ssh_client, force_refresh: bool = False) -> Dict:
         """
-        Initialize profiler with SSH client
+        Profile a server comprehensively via SSH connection.
         
         Args:
-            ssh_client: Paramiko SSH client for command execution
-        """
-        self.ssh_client = ssh_client
-        self.analyzer = SystemAnalyzer()
-        self.profile_cache = {}
-        self.discovery_history = []
-    
-    def profile_server(self, force_refresh: bool = False) -> Dict:
-        """
-        Profile the server using AI-driven discovery
-        
-        Args:
-            force_refresh: Force re-profiling even if cached profile exists
+            ssh_client: Active SSH client connection
+            force_refresh: Whether to ignore cached results
             
         Returns:
-            Comprehensive server profile
+            Dict: Comprehensive server profile with OS, software, and capabilities
         """
-        # Generate cache key
-        cache_key = self._get_cache_key()
-        
-        # Return cached profile if available and not forcing refresh
-        if not force_refresh and cache_key in self.profile_cache:
-            cached_profile = self.profile_cache[cache_key]
-            if self._is_profile_fresh(cached_profile):
-                return cached_profile
-        
-        print("🔍 Discovering server capabilities...")
-        
-        # Phase 1: Generate intelligent discovery commands
-        discovery_commands = self.analyzer.generate_discovery_commands()
-        
-        # Phase 2: Execute discovery commands
-        raw_outputs = self._execute_discovery_commands(discovery_commands)
-        
-        # Phase 3: AI analysis of outputs
-        analysis_result = self.analyzer.analyze_system_info(raw_outputs)
-        
-        if analysis_result["success"]:
-            system_profile = analysis_result["system_profile"]
-        else:
-            print(f"⚠️ AI analysis failed: {analysis_result.get('error')}")
-            system_profile = analysis_result["system_profile"]  # fallback
-        
-        # Phase 4: Enhance profile with metadata
-        enhanced_profile = self._enhance_profile(system_profile, raw_outputs)
-        
-        # Cache the profile
-        self.profile_cache[cache_key] = enhanced_profile
-        
-        print(f"✅ Server profiled: {enhanced_profile['os']['name']} {enhanced_profile['os']['version']}")
-        return enhanced_profile
-    
-    def _execute_discovery_commands(self, discovery_commands: List[Dict]) -> Dict:
-        """Execute discovery commands and collect outputs"""
-        # Import here to avoid circular dependency
-        from ai_shell_agent.modules.ssh.client import run_shell
-        
-        raw_outputs = {}
-        
-        # Sort commands by priority
-        sorted_commands = sorted(discovery_commands, key=lambda x: x.get('priority', 5), reverse=True)
-        
-        for cmd_info in sorted_commands:
-            command = cmd_info['command']
-            category = cmd_info.get('category', 'general')
-            
-            try:
-                print(f"  Running: {command}")
-                output, error = run_shell(command, ssh_client=self.ssh_client)
-                
-                raw_outputs[f"{category}_{len(raw_outputs)}"] = {
-                    "command": command,
-                    "output": output,
-                    "error": error,
-                    "success": not error,
-                    "category": category,
-                    "purpose": cmd_info.get('purpose', 'Discovery')
-                }
-                
-                # Record in history
-                self.discovery_history.append({
-                    "command": command,
-                    "timestamp": time.time(),
-                    "success": not error
-                })
-                
-            except Exception as e:
-                print(f"  ❌ Command failed: {command} - {e}")
-                raw_outputs[f"{category}_{len(raw_outputs)}"] = {
-                    "command": command,
-                    "output": "",
-                    "error": str(e),
-                    "success": False,
-                    "category": category
-                }
-        
-        return raw_outputs
-    
-    def _enhance_profile(self, system_profile: Dict, raw_outputs: Dict) -> Dict:
-        """Enhance the AI-generated profile with additional metadata"""
-        enhanced_profile = system_profile.copy()
-        
-        # Add profiling metadata
-        enhanced_profile["profiling_metadata"] = {
-            "timestamp": time.time(),
-            "discovery_commands_count": len(raw_outputs),
-            "successful_commands": sum(1 for output in raw_outputs.values() if output["success"]),
-            "profiling_version": "1.0",
-            "cache_key": self._get_cache_key()
+        profile = {
+            'timestamp': time.time(),
+            'hostname': self._get_hostname(ssh_client),
+            'os_info': {},
+            'package_managers': [],
+            'service_manager': 'unknown',
+            'system_resources': {},
+            'network_info': {},
+            'installed_software': {},
+            'security_info': {},
+            'capabilities': [],
+            'confidence_score': 0.0
         }
         
-        # Add raw discovery data for debugging
-        enhanced_profile["raw_discovery"] = raw_outputs
-        
-        # Calculate overall confidence
-        if "confidence_score" not in enhanced_profile:
-            enhanced_profile["confidence_score"] = self._calculate_confidence(raw_outputs)
-        
-        return enhanced_profile
-    
-    def _calculate_confidence(self, raw_outputs: Dict) -> float:
-        """Calculate confidence score based on discovery success"""
-        if not raw_outputs:
-            return 0.0
-        
-        successful_commands = sum(1 for output in raw_outputs.values() if output["success"])
-        total_commands = len(raw_outputs)
-        
-        base_confidence = successful_commands / total_commands
-        
-        # Boost confidence if we got key information
-        key_info_bonus = 0.0
-        for output in raw_outputs.values():
-            if output["success"] and any(keyword in output["command"].lower() 
-                                       for keyword in ["uname", "os-release", "systemctl", "which"]):
-                key_info_bonus += 0.1
-        
-        return min(1.0, base_confidence + key_info_bonus)
-    
-    def _get_cache_key(self) -> str:
-        """Generate cache key for the current SSH connection"""
-        # Use SSH connection details as cache key
         try:
-            transport = self.ssh_client.get_transport()
-            if transport:
-                host = transport.getpeername()[0]
-                return f"{host}_{transport.remote_version}"
-            return "unknown_host"
-        except:
-            return "unknown_connection"
-    
-    def _is_profile_fresh(self, profile: Dict, max_age_hours: int = 24) -> bool:
-        """Check if cached profile is still fresh"""
-        if "profiling_metadata" not in profile:
-            return False
-        
-        timestamp = profile["profiling_metadata"].get("timestamp", 0)
-        age_hours = (time.time() - timestamp) / 3600
-        
-        return age_hours < max_age_hours
-    
-    def get_cached_profile(self) -> Optional[Dict]:
-        """Get cached profile if available"""
-        cache_key = self._get_cache_key()
-        return self.profile_cache.get(cache_key)
-    
-    def clear_cache(self):
-        """Clear profile cache"""
-        self.profile_cache.clear()
-        print("🗑️ Profile cache cleared")
-    
-    def get_discovery_history(self) -> List[Dict]:
-        """Get history of discovery commands"""
-        return self.discovery_history.copy()
-    
-    def validate_command_compatibility(self, command: str) -> Dict:
+            # Gather all system information
+            profile['os_info'] = self._detect_os_info(ssh_client)
+            profile['package_managers'] = self._detect_package_managers(ssh_client)
+            profile['service_manager'] = self._detect_service_manager(ssh_client)
+            profile['system_resources'] = self._get_system_resources(ssh_client)
+            profile['network_info'] = self._get_network_info(ssh_client)
+            profile['installed_software'] = self._detect_installed_software(ssh_client)
+            profile['security_info'] = self._get_security_info(ssh_client)
+            
+            # Determine server capabilities based on discovered information
+            profile['capabilities'] = self._determine_capabilities(profile)
+            
+            # Calculate confidence score based on successful detections
+            profile['confidence_score'] = self._calculate_confidence_score(profile)
+            
+        except Exception as e:
+            profile['error'] = f"Profiling failed: {str(e)}"
+            profile['confidence_score'] = 0.0
+            
+        return profile
+
+    def _execute_command_safe(self, ssh_client, command: str) -> Tuple[str, str]:
         """
-        Validate if a command is compatible with the current server
+        Execute command safely with timeout and error handling.
         
         Args:
-            command: Command to validate
+            ssh_client: SSH client connection
+            command: Command to execute
             
         Returns:
-            Compatibility analysis
+            Tuple of (stdout, stderr)
         """
-        profile = self.get_cached_profile()
-        if not profile:
-            return {
-                "compatible": True,  # Assume compatible if no profile
-                "confidence": 0.5,
-                "reason": "No server profile available"
-            }
+        try:
+            stdin, stdout, stderr = ssh_client.exec_command(command, timeout=10)
+            stdout_data = stdout.read().decode('utf-8', errors='ignore').strip()
+            stderr_data = stderr.read().decode('utf-8', errors='ignore').strip()
+            return stdout_data, stderr_data
+        except Exception as e:
+            return "", str(e)
+
+    def _get_hostname(self, ssh_client) -> str:
+        """Get server hostname."""
+        stdout, _ = self._execute_command_safe(ssh_client, 'hostname')
+        return stdout.strip() if stdout else 'unknown'
+
+    def _detect_os_info(self, ssh_client) -> Dict:
+        """Detect operating system information."""
+        os_info = {
+            'distribution': 'unknown',
+            'version': 'unknown',
+            'kernel': 'unknown',
+            'architecture': 'unknown'
+        }
         
-        return self.analyzer.analyze_command_compatibility(command, profile)
+        # Get kernel and architecture info
+        stdout, _ = self._execute_command_safe(ssh_client, 'uname -a')
+        if stdout:
+            parts = stdout.split()
+            if len(parts) >= 3:
+                os_info['kernel'] = f"{parts[0]} {parts[2]}"
+            if len(parts) >= 12:
+                os_info['architecture'] = parts[-2]
+        
+        # Get distribution info from /etc/os-release
+        stdout, _ = self._execute_command_safe(ssh_client, 'cat /etc/os-release 2>/dev/null')
+        if stdout:
+            for line in stdout.split('\n'):
+                if line.startswith('ID='):
+                    os_info['distribution'] = line.split('=')[1].strip('"')
+                elif line.startswith('VERSION_ID='):
+                    os_info['version'] = line.split('=')[1].strip('"')
+                elif line.startswith('PRETTY_NAME='):
+                    os_info['pretty_name'] = line.split('=')[1].strip('"')
+        
+        return os_info
+
+    def _detect_package_managers(self, ssh_client) -> List[str]:
+        """Detect available package managers."""
+        package_managers = []
+        
+        managers = {
+            'apt': 'apt --version 2>/dev/null',
+            'yum': 'yum --version 2>/dev/null',
+            'dnf': 'dnf --version 2>/dev/null', 
+            'apk': 'apk --version 2>/dev/null',
+            'zypper': 'zypper --version 2>/dev/null',
+            'pacman': 'pacman --version 2>/dev/null',
+            'brew': 'brew --version 2>/dev/null'
+        }
+        
+        for manager, command in managers.items():
+            stdout, _ = self._execute_command_safe(ssh_client, command)
+            if stdout and 'not found' not in stdout.lower():
+                package_managers.append(manager)
+        
+        return package_managers
+
+    def _detect_service_manager(self, ssh_client) -> str:
+        """Detect the service management system."""
+        # Check for systemd
+        stdout, _ = self._execute_command_safe(ssh_client, 'systemctl --version 2>/dev/null')
+        if stdout and 'systemd' in stdout.lower():
+            return 'systemd'
+        
+        # Check for SysV init
+        stdout, _ = self._execute_command_safe(ssh_client, 'which service 2>/dev/null')
+        if stdout:
+            return 'sysvinit'
+        
+        # Check for OpenRC
+        stdout, _ = self._execute_command_safe(ssh_client, 'which rc-service 2>/dev/null')
+        if stdout:
+            return 'openrc'
+        
+        return 'unknown'
+
+    def _get_system_resources(self, ssh_client) -> Dict:
+        """Get system resource information."""
+        resources = {}
+        
+        # Memory info
+        stdout, _ = self._execute_command_safe(ssh_client, 'free -h 2>/dev/null')
+        if stdout:
+            resources['memory'] = stdout
+        
+        # Disk info
+        stdout, _ = self._execute_command_safe(ssh_client, 'df -h 2>/dev/null')
+        if stdout:
+            resources['disk'] = stdout
+            
+        # CPU info
+        stdout, _ = self._execute_command_safe(ssh_client, 'nproc 2>/dev/null')
+        if stdout:
+            resources['cpu_cores'] = stdout.strip()
+        
+        # Load average
+        stdout, _ = self._execute_command_safe(ssh_client, 'uptime')
+        if stdout:
+            resources['uptime'] = stdout
+            
+        return resources
+
+    def _get_network_info(self, ssh_client) -> Dict:
+        """Get network configuration information."""
+        network = {}
+        
+        # IP addresses
+        stdout, _ = self._execute_command_safe(ssh_client, 'hostname -I 2>/dev/null')
+        if stdout:
+            network['ip_addresses'] = stdout.strip().split()
+        
+        # Hostname
+        stdout, _ = self._execute_command_safe(ssh_client, 'hostname 2>/dev/null')
+        if stdout:
+            network['hostname'] = stdout.strip()
+        
+        return network
+
+    def _detect_installed_software(self, ssh_client) -> Dict:
+        """Detect commonly used software and tools."""
+        software = {
+            'containers': [],
+            'web_servers': [],
+            'databases': [],
+            'development': [],
+            'system_tools': []
+        }
+        
+        # Container technologies
+        for tool in ['docker', 'podman', 'lxc']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {tool} 2>/dev/null')
+            if stdout:
+                software['containers'].append(tool)
+        
+        # Web servers
+        for server in ['nginx', 'apache2', 'httpd']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {server} 2>/dev/null')
+            if stdout:
+                software['web_servers'].append(server)
+        
+        # Databases
+        for db in ['mysql', 'mysqld', 'postgresql', 'postgres', 'redis-server', 'mongod']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {db} 2>/dev/null')
+            if stdout:
+                software['databases'].append(db)
+        
+        # Development tools
+        for tool in ['python', 'python3', 'node', 'npm', 'java', 'go', 'php']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {tool} 2>/dev/null')
+            if stdout:
+                software['development'].append(tool)
+                
+        # System tools
+        for tool in ['git', 'curl', 'wget', 'vim', 'nano', 'htop']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {tool} 2>/dev/null')
+            if stdout:
+                software['system_tools'].append(tool)
+        
+        return software
+
+    def _get_security_info(self, ssh_client) -> Dict:
+        """Get security and permission information."""
+        security = {}
+        
+        # User info
+        stdout, _ = self._execute_command_safe(ssh_client, 'id')
+        if stdout:
+            security['user_info'] = stdout
+        
+        # Sudo availability
+        stdout, _ = self._execute_command_safe(ssh_client, 'which sudo 2>/dev/null')
+        security['has_sudo'] = bool(stdout)
+        
+        # Firewall detection
+        for fw in ['firewall-cmd', 'ufw', 'iptables']:
+            stdout, _ = self._execute_command_safe(ssh_client, f'which {fw} 2>/dev/null')
+            if stdout:
+                security['firewall'] = fw
+                break
+        
+        return security
+
+    def _determine_capabilities(self, profile: Dict) -> List[str]:
+        """Determine server capabilities based on profile."""
+        capabilities = []
+        
+        # OS-based capabilities
+        os_dist = profile['os_info'].get('distribution', '').lower()
+        if 'ubuntu' in os_dist or 'debian' in os_dist:
+            capabilities.extend(['apt-package-management', 'systemd-services'])
+        elif 'centos' in os_dist or 'rhel' in os_dist or 'fedora' in os_dist:
+            capabilities.extend(['yum-package-management', 'systemd-services'])
+        elif 'alpine' in os_dist:
+            capabilities.extend(['apk-package-management', 'openrc-services'])
+        
+        # Software-based capabilities
+        if profile['installed_software'].get('containers'):
+            capabilities.append('container-management')
+        if profile['installed_software'].get('web_servers'):
+            capabilities.append('web-server-management')
+        if profile['installed_software'].get('databases'):
+            capabilities.append('database-management')
+        if profile['installed_software'].get('development'):
+            capabilities.append('development-environment')
+        
+        # Service management
+        if profile['service_manager'] == 'systemd':
+            capabilities.append('systemd-service-control')
+        elif profile['service_manager'] == 'sysvinit':
+            capabilities.append('sysvinit-service-control')
+        
+        return capabilities
+
+    def _calculate_confidence_score(self, profile: Dict) -> float:
+        """Calculate confidence score based on successful detections."""
+        total_categories = 7  # os, package_managers, service_manager, etc.
+        successful_detections = 0
+        
+        if profile['os_info'].get('distribution') != 'unknown':
+            successful_detections += 1
+        if profile['package_managers']:
+            successful_detections += 1
+        if profile['service_manager'] != 'unknown':
+            successful_detections += 1
+        if profile['system_resources']:
+            successful_detections += 1
+        if profile['network_info']:
+            successful_detections += 1
+        if any(profile['installed_software'].values()):
+            successful_detections += 1
+        if profile['security_info']:
+            successful_detections += 1
+            
+        return successful_detections / total_categories

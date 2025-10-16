@@ -33,23 +33,32 @@ except TypeError:
 
 def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list = None, system_context=None) -> dict:
     """
-    Ask AI to troubleshoot an error and provide diagnostic/fix commands.
+    Analyze an error and generate multi-step troubleshooting plan using AI.
+    
+    This function takes an error message and creates a comprehensive troubleshooting
+    workflow including diagnostic commands, fix commands, and verification steps.
     
     Args:
-        error_text: The error message or description from the user
-        context: Optional dict with additional context:
+        error_text (str): The error message or description to troubleshoot
+        context (dict, optional): Additional context information:
             - last_command: The command that failed
-            - last_output: stdout from the command
-            - last_error: stderr from the command
+            - last_output: stdout from the failed command
+            - last_error: stderr from the failed command
             - diagnostic_results: Output from previous diagnostic commands
-        history: Optional list of previous troubleshooting steps
-        system_context: Optional SystemContextManager for server awareness
+        history (list, optional): Previous troubleshooting steps for iterative analysis
+        system_context (SystemContextManager, optional): Server context for system-aware troubleshooting
     
     Returns:
-        dict with:
-            - troubleshoot_response: Parsed JSON from AI
-            - raw_output: Raw AI response
+        dict: Contains troubleshooting analysis and commands:
+            - troubleshoot_response: Structured JSON with analysis, commands, and metadata
+            - raw_output: Raw AI response text
             - success: Boolean indicating if parsing succeeded
+            - error: Error message if parsing failed
+    
+    Example:
+        >>> result = ask_ai_for_troubleshoot("nginx: bind() failed")
+        >>> print(result['troubleshoot_response']['fix_commands'])
+        ['sudo systemctl stop apache2', 'sudo systemctl start nginx']
     """
     # Get base troubleshooting prompt
     base_prompt = get_troubleshoot_prompt()
@@ -65,9 +74,10 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
     else:
         system_prompt = base_prompt
     
-    # Build user message with context
+    # Build comprehensive user message with error details and context
     user_message = f"Error to troubleshoot:\n{error_text}\n"
     
+    # Add contextual information if available to improve troubleshooting accuracy
     if context:
         if context.get("last_command"):
             user_message += f"\nCommand that failed: {context['last_command']}"
@@ -78,10 +88,10 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
         if context.get("diagnostic_results"):
             user_message += f"\nDiagnostic results:\n{context['diagnostic_results']}"
     
-    # Prepare messages
+    # Initialize conversation with system prompt
     messages = [{"role": "system", "content": system_prompt}]
     
-    # Add history if provided (for iterative troubleshooting)
+    # Add conversation history for iterative troubleshooting sessions
     if history:
         for entry in history:
             if entry.get("user_msg"):
@@ -89,29 +99,31 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
             if entry.get("ai_msg"):
                 messages.append({"role": "assistant", "content": entry["ai_msg"]})
     
+    # Add current troubleshooting request
     messages.append({"role": "user", "content": user_message})
     
     try:
+        # Call GPT-4o-mini via Bosch internal endpoint for troubleshooting analysis
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             extra_query={"api-version": "2024-08-01-preview"},
-            temperature=0.2,  # Lower temperature for more consistent troubleshooting
-            response_format={"type": "json_object"}
+            temperature=0.2,  # Lower temperature for consistent, reliable troubleshooting
+            response_format={"type": "json_object"}  # Ensure structured JSON response
         )
         
         content = response.choices[0].message.content.strip()
         
-        # Parse JSON response
+        # Parse structured JSON response from AI
         troubleshoot_response = json.loads(content)
         
-        # Validate required fields
+        # Validate that essential troubleshooting fields are present
         required_fields = ["analysis", "fix_commands", "verification_commands"]
         missing_fields = [field for field in required_fields if field not in troubleshoot_response]
         
         if missing_fields:
             print(f"Warning: Missing required fields: {missing_fields}")
-            # Add defaults
+            # Provide fallback values for missing required fields
             if "analysis" not in troubleshoot_response:
                 troubleshoot_response["analysis"] = "Unable to analyze error"
             if "fix_commands" not in troubleshoot_response:
@@ -119,7 +131,7 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
             if "verification_commands" not in troubleshoot_response:
                 troubleshoot_response["verification_commands"] = []
         
-        # Add defaults for optional fields
+        # Provide default values for optional troubleshooting fields
         if "diagnostic_commands" not in troubleshoot_response:
             troubleshoot_response["diagnostic_commands"] = []
         if "reasoning" not in troubleshoot_response:
@@ -136,10 +148,11 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
         }
     
     except json.JSONDecodeError as e:
+        # Handle cases where AI returns invalid JSON or plain text
         print(f"JSON parsing failed: {e}")
         print(f"Raw response: {content}")
         
-        # Return error structure
+        # Return safe error structure for troubleshooting workflow
         return {
             "troubleshoot_response": {
                 "analysis": "Failed to parse AI response",
@@ -147,7 +160,7 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
                 "fix_commands": [],
                 "verification_commands": [],
                 "reasoning": f"JSON parsing error: {str(e)}",
-                "risk_level": "high",
+                "risk_level": "high",  # High risk due to parsing failure
                 "requires_confirmation": True
             },
             "raw_output": content,
@@ -156,6 +169,7 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
         }
     
     except Exception as e:
+        # Handle API failures, network issues, authentication problems
         print(f"AI API call failed: {e}")
         return {
             "troubleshoot_response": {
@@ -164,7 +178,7 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
                 "fix_commands": [],
                 "verification_commands": [],
                 "reasoning": f"API error: {str(e)}",
-                "risk_level": "high",
+                "risk_level": "high",  # High risk due to service failure
                 "requires_confirmation": True
             },
             "raw_output": "",

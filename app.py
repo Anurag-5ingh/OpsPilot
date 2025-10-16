@@ -1,78 +1,102 @@
+# OpsPilot - AI-Powered DevOps Assistant
+# Main Flask application serving REST API and WebSocket terminal
+
+# Eventlet setup for async WebSocket support
 import eventlet
 eventlet.monkey_patch()
 
+# Core imports
 import os
-import time
-from flask import Flask, request, jsonify, send_from_directory
-# Import from modular structure inside ai_shell_agent
-from ai_shell_agent.modules.command_generation import ask_ai_for_command
+from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for
+from flask_socketio import SocketIO, emit
+import paramiko
+import threading
+
+# Import OpsPilot modules
+from ai_shell_agent.modules.command_generation import ask_ai_for_command, analyze_command_failure
 from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, TroubleshootWorkflow
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
-from ai_shell_agent.modules.pipeline_healing import PipelineMonitor, AutonomousHealer
 
-from flask import render_template, redirect, url_for
-from flask_socketio import SocketIO, emit
-import paramiko
-import threading
-# -------------------------
-# App setup
-# -------------------------
+# ===========================
+# Application Configuration
+# ===========================
 app = Flask(__name__)
 
-# Keep your existing memory logic
-memory = ConversationMemory(max_entries=20)
-
-# Initialize system context manager
-system_context = SystemContextManager()
-
-# Initialize pipeline healing system
-pipeline_healer = AutonomousHealer(system_context)
-pipeline_monitor = PipelineMonitor(healer=pipeline_healer)
-
-# Secret key config
+# Flask secret key for session management
+# Can be overridden with APP_SECRET environment variable
 app.config['SECRET_KEY'] = os.environ.get("APP_SECRET", "dev_secret_change_me")
 
-# -------------------------
-# Register blueprints
-# -------------------------
+# Initialize conversation memory to maintain context across interactions
+# Limited to 20 entries for performance optimization
+memory = ConversationMemory(max_entries=20)
+
+# Initialize system context manager for server-aware command generation
+system_context = SystemContextManager()
+
+# Register SSH blueprint for SSH connection management endpoints
 app.register_blueprint(ssh_bp)
+
+# ===========================
+# Frontend Serving Routes
+# ===========================
 
 @app.route("/")
 def index():
-    """Main route - redirect to opspilot interface"""
+    """Main route - redirect to OpsPilot interface"""
     return redirect(url_for("serve_index"))
 
-# -------------------------
-# Existing routes (unchanged)
-# -------------------------
 @app.route("/opspilot")
 def serve_index():
+    """Serve the main OpsPilot web interface"""
     return send_from_directory("frontend", "index.html")
 
 @app.route("/<path:path>")
 def serve_static(path):
+    """Serve static frontend files (CSS, JS, images)"""
     return send_from_directory("frontend", path)
+
+# ===========================
+# Command Generation API
+# ===========================
 
 @app.route("/ask", methods=["POST"])
 def ask():
+    """
+    Generate a shell command from natural language input.
+    
+    Request body:
+    {
+        "prompt": "natural language request (e.g., 'list all files')"
+    }
+    
+    Returns:
+    {
+        "ai_command": "generated shell command",
+        "original_prompt": "original user input"
+    }
+    """
     data = request.get_json()
     user_input = data.get("prompt")
 
+    # Validate input
     if not user_input:
         return jsonify({"error": "No prompt provided"}), 400
 
+    # Generate a shell command from natural language using AI with system context
     result = ask_ai_for_command(user_input, memory=memory.get(), system_context=system_context)
     if not result:
         return jsonify({"error": "AI failed to respond"}), 500
 
+    # Extract the generated command from AI response
     ai_response = result.get("ai_response", {})
     command = ai_response.get("final_command")
 
     if not command:
         return jsonify({"error": "No command generated"}), 400
 
+    # Store the interaction in conversation memory for context
     memory.add(user_input, command)
 
     return jsonify({
@@ -83,8 +107,22 @@ def ask():
 @app.route("/run", methods=["POST"])
 def run_command():
     """
-    Execute a shell command on the remote server.
-    Accepts `host`, `username`, `port` (optional, default 22), and `command`.
+    Execute a shell command on the remote server via SSH.
+    
+    Request body:
+    {
+        "host": "remote server hostname/IP",
+        "username": "SSH username",
+        "password": "SSH password (optional if using keys)",
+        "command": "shell command to execute",
+        "port": 22 (optional, defaults to 22)
+    }
+    
+    Returns:
+    {
+        "output": "command output",
+        "error": "error output (if any)"
+    }
     """
     data = request.get_json()
     host = data.get("host")
@@ -93,6 +131,7 @@ def run_command():
     command = data.get("command")
     port = data.get("port", 22)
 
+    # Validate required parameters
     if not host or not username or not command:
         return jsonify({"error": "host, username, and command are required"}), 400
 
@@ -101,29 +140,108 @@ def run_command():
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
 
+    # Execute the command and return results
     output, error = run_shell(command, ssh_client=ssh_client)
     return jsonify({"output": output, "error": error})
 
-# -------------------------
-# NEW: Troubleshooting Feature (Separate from /ask)
-# -------------------------
+@app.route("/analyze-failure", methods=["POST"])
+def analyze_failure():
+    """
+    Analyze a failed command execution and suggest intelligent alternatives.
+    
+    This endpoint examines why a command failed, provides root cause analysis,
+    and suggests system-aware alternative solutions with detailed reasoning.
+    
+    Request body:
+    {
+        "original_command": "htop",
+        "error_output": "bash: htop: command not found",
+        "host": "server hostname/IP (optional for context)",
+        "username": "SSH username (optional for context)"
+    }
+    
+    Returns:
+    {
+        "original_command": "htop",
+        "failure_analysis": {
+            "categories": ["command_not_found"],
+            "root_cause": "The command 'htop' is not installed...",
+            "confidence_score": 0.85
+        },
+        "alternative_solutions": [
+            {
+                "alternative_command": "sudo apt install htop",
+                "reasoning": "Install htop package first",
+                "success_probability": 0.8,
+                "side_effects": ["Downloads and installs package"]
+            }
+        ],
+        "system_specific_fixes": [...]
+    }
+    """
+    data = request.get_json()
+    original_command = data.get("original_command")
+    error_output = data.get("error_output")
+    host = data.get("host")  # Optional for system context
+    username = data.get("username")  # Optional for system context
+    
+    # Validate required parameters
+    if not original_command or not error_output:
+        return jsonify({"error": "original_command and error_output are required"}), 400
+    
+    # Use system context if host info provided (optional enhancement)
+    context_to_use = system_context
+    if host and username:
+        # Could enhance to get specific context for this host
+        # For now, use the current system context
+        pass
+    
+    try:
+        # Analyze the command failure with intelligent alternatives
+        analysis_result = analyze_command_failure(
+            original_command, error_output, context_to_use
+        )
+        
+        return jsonify(analysis_result)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failure analysis failed: {str(e)}",
+            "original_command": original_command
+        }), 500
+
+# ===========================
+# Troubleshooting API
+# ===========================
+
 @app.route("/troubleshoot", methods=["POST"])
 def troubleshoot():
     """
-    Analyze an error and provide troubleshooting steps.
-    This is a separate feature from single-command generation.
+    Analyze an error and provide multi-step troubleshooting plan.
+    This feature generates diagnostic commands, fix commands, and verification steps.
     
     Request body:
     {
         "error_text": "error message or description",
         "host": "remote host",
-        "username": "ssh user",
+        "username": "SSH username",
         "port": 22,
         "context": {
-            "last_command": "optional",
-            "last_output": "optional",
-            "last_error": "optional"
+            "last_command": "optional - last command that failed",
+            "last_output": "optional - output from last command",
+            "last_error": "optional - error from last command"
         }
+    }
+    
+    Returns:
+    {
+        "analysis": "AI analysis of the error",
+        "diagnostic_commands": ["list", "of", "diagnostic", "commands"],
+        "fix_commands": ["list", "of", "fix", "commands"],
+        "verification_commands": ["list", "of", "verification", "commands"],
+        "reasoning": "explanation of the troubleshooting approach",
+        "risk_level": "low|medium|high",
+        "requires_confirmation": boolean
     }
     """
     data = request.get_json()
@@ -133,21 +251,23 @@ def troubleshoot():
     port = int(data.get("port", 22))
     context = data.get("context", {})
     
+    # Validate required parameters
     if not error_text:
         return jsonify({"error": "error_text is required"}), 400
     
     if not host or not username:
         return jsonify({"error": "host and username are required"}), 400
     
-    # Get troubleshooting plan from AI
+    # Get troubleshooting plan from AI with system awareness
     result = ask_ai_for_troubleshoot(error_text, context=context, system_context=system_context)
     
     if not result or not result.get("success"):
         return jsonify({
             "error": "Failed to generate troubleshooting plan",
-            "details": result.get("error", "Unknown error")
+            "details": (result or {}).get("error", "Unknown error")
         }), 500
     
+    # Extract troubleshooting plan components
     troubleshoot_plan = result.get("troubleshoot_response", {})
     
     return jsonify({
@@ -164,14 +284,31 @@ def troubleshoot():
 def troubleshoot_execute():
     """
     Execute troubleshooting commands (diagnostics, fixes, or verification).
+    Uses the TroubleshootWorkflow engine to execute commands with appropriate safety measures.
     
     Request body:
     {
-        "commands": ["cmd1", "cmd2"],
+        "commands": ["cmd1", "cmd2", "cmd3"],
         "step_type": "diagnostic|fix|verification",
         "host": "remote host",
-        "username": "ssh user",
+        "username": "SSH username",
+        "password": "SSH password (optional)",
         "port": 22
+    }
+    
+    Returns:
+    {
+        "results": [
+            {
+                "command": "executed command",
+                "output": "command output",
+                "error": "error output",
+                "success": boolean,
+                "execution_time": float
+            }
+        ],
+        "all_success": boolean,
+        "summary": "execution summary"
     }
     """
     data = request.get_json()
@@ -182,20 +319,22 @@ def troubleshoot_execute():
     password = data.get("password")
     port = int(data.get("port", 22))
     
+    # Validate required parameters
     if not commands:
         return jsonify({"error": "No commands provided"}), 400
     
     if not host or not username:
         return jsonify({"error": "host and username are required"}), 400
     
-    # Create SSH client
+    # Create SSH client for command execution
     ssh_client = create_ssh_client(host, username, port, password)
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
     
-    # Execute commands using workflow engine
+    # Execute commands using the troubleshooting workflow engine
     workflow = TroubleshootWorkflow(ssh_client)
     
+    # Choose execution method based on step type
     if step_type == "diagnostic":
         results = workflow.run_diagnostics(commands)
     elif step_type == "fix":
@@ -203,26 +342,51 @@ def troubleshoot_execute():
     elif step_type == "verification":
         results = workflow.run_verification(commands)
     else:
+        # Generic command execution
         results = workflow.execute_commands(commands, step_type)
     
+    # Clean up SSH connection
     ssh_client.close()
     
     return jsonify(results)
 
-# -------------------------
-# NEW: System Awareness Endpoints
-# -------------------------
+# ===========================
+# System Awareness API
+# ===========================
+
 @app.route("/profile", methods=["POST"])
 def profile_server():
     """
-    Profile the server to understand its capabilities and configuration.
+    Profile a server to understand its capabilities and configuration.
+    
+    This endpoint analyzes the target server to detect:
+    - Operating system and version
+    - Available package managers (apt, yum, dnf, apk, etc.)
+    - Service manager (systemd, sysvinit, openrc)
+    - Installed software and tools
+    - Security context (sudo availability, firewall)
     
     Request body:
     {
-        "host": "remote host",
-        "username": "ssh user", 
+        "host": "server hostname/IP",
+        "username": "SSH username",
+        "password": "SSH password (optional)",
         "port": 22,
         "force_refresh": false
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "profile": {
+            "os_info": {"distribution": "ubuntu", "version": "20.04"},
+            "package_managers": ["apt"],
+            "service_manager": "systemd",
+            "installed_software": {...},
+            "capabilities": [...],
+            "confidence_score": 0.85
+        },
+        "summary": "OS: Ubuntu 20.04 | Package Manager: apt | Service Manager: systemd"
     }
     """
     data = request.get_json()
@@ -232,17 +396,18 @@ def profile_server():
     port = int(data.get("port", 22))
     force_refresh = data.get("force_refresh", False)
     
+    # Validate required parameters
     if not host or not username:
         return jsonify({"error": "host and username are required"}), 400
     
-    # Create SSH client
+    # Create SSH client for server profiling
     ssh_client = create_ssh_client(host, username, port, password)
     if ssh_client is None:
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
     
     try:
         # Initialize system context with this connection
-        profile = system_context.initialize_context(ssh_client, force_refresh=force_refresh)
+        profile = system_context.initialize_context(ssh_client, host, force_refresh)
         
         return jsonify({
             "success": True,
@@ -253,14 +418,23 @@ def profile_server():
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": f"Server profiling failed: {str(e)}"
         }), 500
     finally:
         ssh_client.close()
 
 @app.route("/profile/summary", methods=["GET"])
 def get_profile_summary():
-    """Get a summary of the current server profile"""
+    """
+    Get a summary of the currently active server profile.
+    
+    Returns:
+    {
+        "summary": "OS: Ubuntu 20.04 | Package Manager: apt | Service Manager: systemd",
+        "has_profile": true,
+        "confidence": 0.85
+    }
+    """
     summary = system_context.get_system_summary()
     profile = system_context.get_current_profile()
     
@@ -272,7 +446,22 @@ def get_profile_summary():
 
 @app.route("/profile/suggestions/<category>", methods=["GET"])
 def get_command_suggestions(category):
-    """Get server-specific command suggestions for a category"""
+    """
+    Get server-specific command suggestions for a category.
+    
+    Categories: 'package', 'service', 'network', 'monitoring'
+    
+    Returns:
+    {
+        "category": "package",
+        "suggestions": [
+            "sudo apt update && sudo apt upgrade",
+            "apt search <package>",
+            "sudo apt install <package>"
+        ],
+        "server_aware": true
+    }
+    """
     suggestions = system_context.get_command_suggestions(category)
     
     return jsonify({
@@ -281,368 +470,214 @@ def get_command_suggestions(category):
         "server_aware": system_context.get_current_profile() is not None
     })
 
-# -------------------------
-# NEW: Pipeline Healing Endpoints
-# -------------------------
-@app.route("/pipeline/webhook", methods=["POST"])
-def pipeline_webhook():
-    """
-    Receive pipeline failure webhooks and trigger healing
-    
-    Request body:
-    {
-        "source": "jenkins/ansible/gitlab",
-        "job_name": "web-app-deployment",
-        "build_number": 123,
-        "stage": "Deploy",
-        "error_message": "Package installation failed",
-        "console_output": "...",
-        "target_hosts": ["web-server-01"]
-    }
-    """
-    try:
-        webhook_data = request.get_json()
-        
-        if not webhook_data:
-            return jsonify({"error": "No webhook data provided"}), 400
-        
-        # Handle the webhook through pipeline monitor
-        result = pipeline_monitor.handle_webhook_failure(webhook_data)
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "timestamp": time.time()
-        }), 500
+# ===========================
+# WebSocket Terminal Support
+# ===========================
 
-@app.route("/pipeline/status", methods=["GET"])
-def pipeline_status():
-    """Get pipeline healing system status"""
-    stats = pipeline_monitor.get_monitoring_stats()
-    
-    return jsonify({
-        "pipeline_healing": stats,
-        "system_context": {
-            "has_profile": system_context.get_current_profile() is not None,
-            "summary": system_context.get_system_summary() if system_context.get_current_profile() else "No profile"
-        }
-    })
-
-@app.route("/pipeline/healing/history", methods=["GET"])
-def healing_history():
-    """Get healing history"""
-    limit = request.args.get("limit", 20, type=int)
-    history = pipeline_healer.get_healing_history(limit)
-    
-    return jsonify({
-        "healing_history": history,
-        "success_rate": pipeline_healer.get_success_rate(),
-        "total_sessions": len(history)
-    })
-
-@app.route("/pipeline/test/trigger", methods=["POST"])
-def test_trigger_healing():
-    """
-    Test endpoint to trigger healing manually
-    
-    Request body:
-    {
-        "error_type": "package_failure",
-        "host": "test-server",
-        "error_message": "Package not found"
-    }
-    """
-    try:
-        test_data = request.get_json()
-        
-        # Create test error info
-        error_info = {
-            "timestamp": time.time(),
-            "source": "test",
-            "task_name": "Test Healing",
-            "host": test_data.get("host", "test-server"),
-            "module": "test",
-            "raw_error": test_data.get("error_message", "Test error"),
-            "error_category": test_data.get("error_type", "unknown"),
-            "severity": "medium"
-        }
-        
-        # Trigger healing
-        healing_result = pipeline_healer.heal_error(
-            error_info=error_info,
-            target_hosts=[error_info["host"]]
-        )
-        
-        return jsonify({
-            "test_triggered": True,
-            "error_info": error_info,
-            "healing_result": healing_result
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "test_triggered": False,
-            "error": str(e)
-        }), 500
-
-# -------------------------
-# Simple dashboard
-# -------------------------
-@app.route("/dashboard")
-def dashboard():
-    return (
-        "<h2>Welcome to OpsPilot Dashboard</h2>"
-        "<p>This is your dashboard. Your app's original endpoints are unchanged.</p>"
-        "<p><a href='/'>Back to app</a></p>"
-    )
-
+# Initialize SocketIO for real-time terminal communication
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Dictionary to store active SSH sessions by session ID
 ssh_sessions = {}
+
 @app.route("/terminal")
-
 def terminal():
-
+    """
+    Serve terminal interface (legacy route with hardcoded values).
+    Note: This route contains hardcoded connection details and should be updated
+    to use dynamic parameters or removed if not needed.
+    """
+    # TODO: Remove hardcoded values or make this route dynamic
     ip = "10.4.5.70" 
-    # request.args.get("ip")
-
     user = "root"
-    # request.args.get("user")
-
     password = ""
-    # request.args.get("password", "")
-
     return render_template("terminal.html", ip=ip, user=user, password=password)
 
-
-
 def _reader_thread(sid: str):
-
+    """
+    Background thread to read SSH output and send to WebSocket client.
+    
+    Args:
+        sid (str): Socket.IO session ID
+    """
     session = ssh_sessions.get(sid)
-
+    
     if not session:
-
         return
-
+    
     chan = session["chan"]
-
-
-
+    
     try:
-
         while True:
-
+            # Check if channel is closed or session was removed
             if chan.closed or sid not in ssh_sessions:
-
                 break
-
-
-
+            
+            # Read stdout data if available
             if chan.recv_ready():
-
                 data = chan.recv(4096).decode(errors="ignore")
-
                 socketio.emit("terminal_output", {"output": data}, room=sid)
-
-
-
+            
+            # Read stderr data if available
             if chan.recv_stderr_ready():
-
                 data = chan.recv_stderr(4096).decode(errors="ignore")
-
                 socketio.emit("terminal_output", {"output": data}, room=sid)
-
-
-
+            
+            # Small delay to prevent CPU spinning
             eventlet.sleep(0.01)
-
+            
     except Exception as e:
-
+        # Send error message to client
         socketio.emit("terminal_output", {"output": f"\r\n[reader error] {e}\r\n"}, room=sid)
-
     finally:
-
+        # Clean up session on thread exit
         session = ssh_sessions.pop(sid, None)
-
         if session:
-
-            try: session["chan"].close()
-
-            except Exception: pass
-
-            try: session["client"].close()
-
-            except Exception: pass
-
-
+            try: 
+                session["chan"].close()
+            except Exception: 
+                pass
+            try: 
+                session["client"].close()
+            except Exception: 
+                pass
 
 @socketio.on("start_ssh")
-
 def start_ssh(data):
-
+    """
+    Initialize SSH connection for WebSocket terminal.
+    
+    Expected data:
+    {
+        "ip": "server IP/hostname",
+        "user": "SSH username", 
+        "password": "SSH password (optional)"
+    }
+    """
     sid = request.sid
-
     ip = (data or {}).get("ip")
-
     user = (data or {}).get("user")
-
     password = (data or {}).get("password", "")
-
-
-
+    
+    # Validate required parameters
     if not ip or not user:
-
         emit("terminal_output", {"output": "\r\nMissing IP or Username.\r\n"})
-
         return
-
-
-
-    # Close old session if exists
-
+    
+    # Close existing session if any
     old = ssh_sessions.pop(sid, None)
-
     if old:
-
-        try: old["chan"].close()
-
-        except Exception: pass
-
-        try: old["client"].close()
-
-        except Exception: pass
-
-
-
+        try: 
+            old["chan"].close()
+        except Exception: 
+            pass
+        try: 
+            old["client"].close()
+        except Exception: 
+            pass
+    
     try:
-
+        # Create new SSH client
         client = paramiko.SSHClient()
-
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-
-
-        # Key part: no local ssh_config aliasing
-
+        
+        # Connect with appropriate authentication method
         client.connect(
-
             hostname=str(ip),
-
             username=str(user),
-
             password=password if password else None,
-
-            look_for_keys=not password,  # only use keys if password not provided
-
-            allow_agent=not password,    # allow agent if no password
-
+            look_for_keys=not password,  # Only use keys if password not provided
+            allow_agent=not password,    # Allow agent if no password
             timeout=10
-
         )
-
-
-
+        
+        # Create interactive shell channel
         chan = client.invoke_shell(term="xterm")
-
         chan.settimeout(0.0)
-
-
-
+        
+        # Store session and start reader thread
         ssh_sessions[sid] = {"client": client, "chan": chan}
-
         threading.Thread(target=_reader_thread, args=(sid,), daemon=True).start()
-
-
-
+        
         emit("terminal_output", {"output": f"Connected to {ip} as {user}\r\n"})
-
-
-
+        
     except Exception as e:
-
         emit("terminal_output", {"output": f"\r\nSSH Connection Failed: {e}\r\n"})
 
-
-
 @socketio.on("terminal_input")
-
 def handle_terminal_input(data):
-
+    """
+    Handle keyboard input from WebSocket terminal client.
+    
+    Expected data:
+    {
+        "input": "text to send to terminal"
+    }
+    """
     sid = request.sid
-    print(data)
     session = ssh_sessions.get(sid)
-
+    
     if not session:
-
         emit("terminal_output", {"output": "\r\n[Error] No SSH session. Refresh and try again.\r\n"})
-
         return
-
-
-
+    
     try:
-
         text = (data or {}).get("input", "")
-
         if text:
-
             session["chan"].send(text)
-
     except Exception as e:
-
         emit("terminal_output", {"output": f"\r\n[send error] {e}\r\n"})
 
-
-
 @socketio.on("resize")
-
 def handle_resize(data):
-
+    """
+    Handle terminal resize events from client.
+    
+    Expected data:
+    {
+        "cols": terminal_columns,
+        "rows": terminal_rows
+    }
+    """
     sid = request.sid
-
     session = ssh_sessions.get(sid)
-
+    
     if not session:
-
         return
-
+    
     try:
-
         cols = int((data or {}).get("cols", 80))
-
         rows = int((data or {}).get("rows", 24))
-
         session["chan"].resize_pty(width=cols, height=rows)
-
     except Exception:
-
         pass
 
-
-
 @socketio.on("disconnect")
-
 def on_disconnect():
-
+    """
+    Clean up SSH session when WebSocket client disconnects.
+    """
     sid = request.sid
-
     session = ssh_sessions.pop(sid, None)
-
+    
     if session:
+        try: 
+            session["chan"].close()
+        except Exception: 
+            pass
+        try: 
+            session["client"].close()
+        except Exception: 
+            pass
 
-        try: session["chan"].close()
+# ===========================
+# Application Entry Point
+# ===========================
 
-        except Exception: pass
-
-        try: session["client"].close()
-
-        except Exception: pass
-
-# -------------------------
-# App runner
-# -------------------------
 if __name__ == "__main__":
+    # Get port from environment variable or default to 8080
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    
+    # Run the Flask application with SocketIO support
+    # Set debug=False for production use
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
