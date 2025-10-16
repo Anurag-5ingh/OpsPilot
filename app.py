@@ -1,12 +1,13 @@
 # OpsPilot - AI-Powered DevOps Assistant
 # Main Flask application serving REST API and WebSocket terminal
 
-# Eventlet setup for async WebSocket support
-import eventlet
-eventlet.monkey_patch()
+# Skip eventlet on Windows as it has compatibility issues
+# Use threading mode instead for better Windows compatibility
 
 # Core imports
 import os
+import json
+import time
 from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
 import paramiko
@@ -14,6 +15,9 @@ import threading
 
 # Import OpsPilot modules
 from ai_shell_agent.modules.command_generation import ask_ai_for_command, analyze_command_failure
+from ai_shell_agent.modules.command_generation.ml_risk_scorer import MLRiskScorer
+from ai_shell_agent.modules.security.compliance_checker import SecurityComplianceChecker, ComplianceFramework
+from ai_shell_agent.modules.documentation.smart_doc_generator import SmartDocumentationGenerator, DocumentationType, DocumentationFormat
 from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, TroubleshootWorkflow
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
@@ -35,8 +39,25 @@ memory = ConversationMemory(max_entries=20)
 # Initialize system context manager for server-aware command generation
 system_context = SystemContextManager()
 
+# Initialize ML Risk Scorer for continuous learning
+ml_scorer = MLRiskScorer()
+
+# Initialize Security Compliance Checker
+compliance_checker = SecurityComplianceChecker()
+# Enable common compliance frameworks by default
+compliance_checker.enable_framework(ComplianceFramework.CIS)
+compliance_checker.enable_framework(ComplianceFramework.NIST)
+compliance_checker.enable_framework(ComplianceFramework.CUSTOM)
+
+# Initialize Smart Documentation Generator
+print("Initializing Smart Documentation Generator...")
+doc_generator = SmartDocumentationGenerator()
+print("Smart Documentation Generator initialized successfully")
+
 # Register SSH blueprint for SSH connection management endpoints
+print("Registering SSH blueprint...")
 app.register_blueprint(ssh_bp)
+print("SSH blueprint registered successfully")
 
 # ===========================
 # Frontend Serving Routes
@@ -351,6 +372,606 @@ def troubleshoot_execute():
     return jsonify(results)
 
 # ===========================
+# ML Risk Scorer API
+# ===========================
+
+@app.route("/ml/train", methods=["POST"])
+def train_ml_model():
+    """
+    Train the ML risk scoring model on historical command execution data.
+    
+    This endpoint triggers training of the machine learning model that improves
+    risk assessment accuracy based on user behavior patterns and command outcomes.
+    
+    Request body:
+    {
+        "force_retrain": false,
+        "min_samples": 50
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "training_result": {
+            "metrics": {
+                "accuracy": 0.85,
+                "precision": 0.82,
+                "recall": 0.88,
+                "training_samples": 150
+            }
+        },
+        "model_status": "trained"
+    }
+    """
+    data = request.get_json() or {}
+    force_retrain = data.get("force_retrain", False)
+    min_samples = data.get("min_samples", 50)
+    
+    try:
+        # Check if retraining is needed
+        if not force_retrain and not ml_scorer.should_retrain():
+            current_metrics = ml_scorer.get_model_performance()
+            return jsonify({
+                "success": True,
+                "message": "Model is already up-to-date",
+                "current_metrics": current_metrics,
+                "model_status": "current"
+            })
+        
+        # Train the model
+        training_result = ml_scorer.train_model(min_samples=min_samples)
+        
+        if training_result['success']:
+            return jsonify({
+                "success": True,
+                "training_result": training_result,
+                "model_status": "trained"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": training_result.get('error', 'Training failed'),
+                "model_status": "failed"
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"ML training failed: {str(e)}",
+            "model_status": "error"
+        }), 500
+
+@app.route("/ml/feedback", methods=["POST"])
+def record_command_feedback():
+    """
+    Record command execution outcome for continuous ML model improvement.
+    
+    This endpoint allows the system to learn from actual command outcomes,
+    improving risk assessment accuracy over time.
+    
+    Request body:
+    {
+        "command": "sudo rm -rf /tmp/*",
+        "initial_risk_analysis": {...},
+        "user_confirmed": true,
+        "execution_success": true,
+        "actual_impact": "none|minor|moderate|severe",
+        "system_context": {...},
+        "user_feedback": "Command worked perfectly" (optional)
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "message": "Feedback recorded successfully"
+    }
+    """
+    data = request.get_json()
+    
+    required_fields = ['command', 'initial_risk_analysis', 'user_confirmed', 
+                      'execution_success', 'actual_impact', 'system_context']
+    
+    # Validate required fields
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"Missing required field: {field}"}), 400
+    
+    try:
+        # Record the execution outcome
+        ml_scorer.record_execution_outcome(
+            command=data['command'],
+            initial_analysis=data['initial_risk_analysis'],
+            user_confirmed=data['user_confirmed'],
+            execution_success=data['execution_success'],
+            actual_impact=data['actual_impact'],
+            system_context=data['system_context'],
+            user_feedback=data.get('user_feedback')
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": "Feedback recorded successfully"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to record feedback: {str(e)}"
+        }), 500
+
+@app.route("/ml/status", methods=["GET"])
+def get_ml_model_status():
+    """
+    Get current ML model status and performance metrics.
+    
+    Returns:
+    {
+        "model_available": true,
+        "performance_metrics": {
+            "accuracy": 0.85,
+            "precision": 0.82,
+            "recall": 0.88,
+            "training_date": "2024-01-15T10:30:00",
+            "sample_size": 150
+        },
+        "should_retrain": false,
+        "training_data_count": 200
+    }
+    """
+    try:
+        # Get current model performance
+        metrics = ml_scorer.get_model_performance()
+        
+        # Check if model exists and is functional
+        model_available = ml_scorer.model is not None
+        
+        # Check if retraining is recommended
+        should_retrain = ml_scorer.should_retrain()
+        
+        # Get training data count
+        recent_data = ml_scorer.db.get_training_data(days_back=180)
+        training_data_count = len(recent_data)
+        
+        return jsonify({
+            "model_available": model_available,
+            "performance_metrics": metrics,
+            "should_retrain": should_retrain,
+            "training_data_count": training_data_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to get ML status: {str(e)}",
+            "model_available": False
+        }), 500
+
+# ===========================
+# Security Compliance API
+# ===========================
+
+@app.route("/security/check-compliance", methods=["POST"])
+def check_command_compliance():
+    """
+    Check command compliance against security policies and frameworks.
+    
+    This endpoint validates commands against enabled compliance frameworks
+    like SOX, PCI DSS, CIS, NIST, and custom organizational policies.
+    
+    Request body:
+    {
+        "command": "chmod 777 /var/www/html",
+        "user_context": {
+            "role": "admin",
+            "user_id": "john.doe",
+            "maintenance_window": false,
+            "has_approval": false
+        },
+        "system_context": {
+            "environment": "production",
+            "host_info": {...}
+        }
+    }
+    
+    Returns:
+    {
+        "compliant": false,
+        "compliance_score": 0.3,
+        "violations": [
+            {
+                "rule_id": "cis_002",
+                "framework": "cis",
+                "severity": "medium",
+                "title": "Secure Configuration Management",
+                "description": "Setting overly permissive file permissions",
+                "recommendation": "Follow principle of least privilege for file permissions",
+                "remediation_commands": ["chmod 755 /var/www/html"]
+            }
+        ],
+        "recommendations": [...],
+        "approved_alternatives": [...]
+    }
+    """
+    data = request.get_json()
+    command = data.get("command")
+    user_context = data.get("user_context", {})
+    system_context = data.get("system_context", {})
+    
+    # Validate required parameters
+    if not command:
+        return jsonify({"error": "Command is required"}), 400
+    
+    try:
+        # Check command compliance
+        compliance_result = compliance_checker.check_command_compliance(
+            command, system_context, user_context
+        )
+        
+        return jsonify(compliance_result)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Compliance check failed: {str(e)}",
+            "command": command
+        }), 500
+
+@app.route("/security/frameworks", methods=["GET"])
+def get_compliance_frameworks():
+    """
+    Get status of all compliance frameworks.
+    
+    Returns:
+    {
+        "enabled_frameworks": ["cis", "nist", "custom"],
+        "available_frameworks": ["sox", "pci_dss", "hipaa", "soc2", "gdpr", "cis", "nist", "custom"],
+        "total_policies": 12,
+        "custom_policies": 0
+    }
+    """
+    try:
+        framework_status = compliance_checker.get_framework_status()
+        return jsonify(framework_status)
+    except Exception as e:
+        return jsonify({"error": f"Failed to get framework status: {str(e)}"}), 500
+
+@app.route("/security/frameworks/<framework>", methods=["POST", "DELETE"])
+def manage_compliance_framework(framework):
+    """
+    Enable or disable compliance frameworks.
+    
+    POST: Enable framework
+    DELETE: Disable framework
+    
+    Returns:
+    {
+        "success": true,
+        "framework": "pci_dss",
+        "action": "enabled|disabled"
+    }
+    """
+    try:
+        # Validate framework
+        try:
+            framework_enum = ComplianceFramework(framework)
+        except ValueError:
+            return jsonify({"error": f"Invalid framework: {framework}"}), 400
+        
+        if request.method == "POST":
+            compliance_checker.enable_framework(framework_enum)
+            action = "enabled"
+        else:  # DELETE
+            compliance_checker.disable_framework(framework_enum)
+            action = "disabled"
+        
+        return jsonify({
+            "success": True,
+            "framework": framework,
+            "action": action
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Framework management failed: {str(e)}",
+            "framework": framework
+        }), 500
+
+@app.route("/security/record-decision", methods=["POST"])
+def record_compliance_decision():
+    """
+    Record user decision on compliance violation for ML learning.
+    
+    Request body:
+    {
+        "violation_id": "cis_002",
+        "user_approved": true,
+        "user_context": {
+            "role": "admin",
+            "maintenance_window": true
+        },
+        "command": "chmod 777 /tmp"
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "message": "Decision recorded for ML learning"
+    }
+    """
+    data = request.get_json()
+    violation_id = data.get("violation_id")
+    user_approved = data.get("user_approved")
+    user_context = data.get("user_context", {})
+    command = data.get("command")
+    
+    # Validate required parameters
+    if not violation_id or user_approved is None or not command:
+        return jsonify({"error": "violation_id, user_approved, and command are required"}), 400
+    
+    try:
+        compliance_checker.record_user_decision(
+            violation_id, user_approved, user_context, command
+        )
+        
+        return jsonify({
+            "success": True,
+            "message": "Decision recorded for ML learning"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to record decision: {str(e)}",
+            "violation_id": violation_id
+        }), 500
+
+# ===========================
+# Smart Documentation API
+# ===========================
+
+@app.route("/documentation/generate-runbook", methods=["POST"])
+def generate_runbook():
+    """
+    Generate runbook documentation from command execution patterns.
+    
+    Request body:
+    {
+        "title": "Database Backup Procedure" (optional),
+        "days_back": 30,
+        "min_frequency": 3
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "available_patterns": [
+            {
+                "pattern": "mysqldump -> gzip -> scp",
+                "frequency": 5,
+                "avg_success_rate": 0.9
+            }
+        ],
+        "generated_runbooks": [
+            {
+                "id": "runbook_20241016_142030",
+                "title": "Procedure: mysqldump → gzip → scp",
+                "confidence_score": 0.85
+            }
+        ]
+    }
+    """
+    data = request.get_json() or {}
+    title = data.get("title")
+    days_back = data.get("days_back", 30)
+    min_frequency = data.get("min_frequency", 3)
+    
+    try:
+        # Identify command patterns
+        patterns = doc_generator.pattern_analyzer.identify_command_sequences(days_back=days_back)
+        
+        if not patterns:
+            return jsonify({
+                "success": True,
+                "available_patterns": [],
+                "generated_runbooks": [],
+                "message": "No frequent command patterns found"
+            })
+        
+        # Filter patterns by frequency
+        frequent_patterns = [p for p in patterns if p['frequency'] >= min_frequency]
+        
+        # Generate runbooks for frequent patterns
+        generated_runbooks = []
+        for pattern in frequent_patterns[:5]:  # Limit to top 5 patterns
+            runbook = doc_generator.generate_runbook_from_pattern(pattern, title)
+            generated_runbooks.append({
+                "id": runbook.id,
+                "title": runbook.title,
+                "confidence_score": runbook.confidence_score
+            })
+        
+        return jsonify({
+            "success": True,
+            "available_patterns": [
+                {
+                    "pattern": p["pattern"],
+                    "frequency": p["frequency"],
+                    "avg_success_rate": p["avg_success_rate"]
+                } for p in frequent_patterns
+            ],
+            "generated_runbooks": generated_runbooks
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Runbook generation failed: {str(e)}"
+        }), 500
+
+@app.route("/documentation/generate-troubleshooting", methods=["POST"])
+def generate_troubleshooting_guide():
+    """
+    Generate troubleshooting guide based on historical error patterns.
+    
+    Request body:
+    {
+        "error_pattern": "command_not_found",
+        "title": "Command Not Found Troubleshooting" (optional)
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "guide_id": "troubleshoot_command_not_found_20241016_142030",
+        "title": "Troubleshooting: Command Not Found",
+        "confidence_score": 0.75,
+        "step_count": 8
+    }
+    """
+    data = request.get_json()
+    error_pattern = data.get("error_pattern")
+    title = data.get("title")
+    
+    # Validate required parameters
+    if not error_pattern:
+        return jsonify({"error": "error_pattern is required"}), 400
+    
+    try:
+        # Generate troubleshooting guide
+        guide = doc_generator.generate_troubleshooting_guide(error_pattern, title)
+        
+        return jsonify({
+            "success": True,
+            "guide_id": guide.id,
+            "title": guide.title,
+            "confidence_score": guide.confidence_score,
+            "step_count": len(guide.steps)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Troubleshooting guide generation failed: {str(e)}",
+            "error_pattern": error_pattern
+        }), 500
+
+@app.route("/documentation/generate-reference", methods=["POST"])
+def generate_command_reference():
+    """
+    Generate command reference documentation based on usage patterns.
+    
+    Request body:
+    {
+        "command_pattern": "docker",
+        "title": "Docker Command Reference" (optional)
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "reference_id": "cmdref_docker_20241016_142030",
+        "title": "docker Command Reference",
+        "confidence_score": 0.82,
+        "usage_examples": 5
+    }
+    """
+    data = request.get_json()
+    command_pattern = data.get("command_pattern")
+    title = data.get("title")
+    
+    # Validate required parameters
+    if not command_pattern:
+        return jsonify({"error": "command_pattern is required"}), 400
+    
+    try:
+        # Generate command reference
+        reference = doc_generator.generate_command_reference(command_pattern, title)
+        
+        return jsonify({
+            "success": True,
+            "reference_id": reference.id,
+            "title": reference.title,
+            "confidence_score": reference.confidence_score,
+            "usage_examples": len(reference.steps)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Command reference generation failed: {str(e)}",
+            "command_pattern": command_pattern
+        }), 500
+
+@app.route("/documentation/<doc_id>", methods=["GET"])
+def get_documentation(doc_id):
+    """
+    Retrieve generated documentation by ID.
+    
+    Query parameters:
+    - format: markdown|json|html|plain_text (default: markdown)
+    
+    Returns documentation in specified format.
+    """
+    format_param = request.args.get("format", "markdown")
+    
+    try:
+        # Validate format
+        try:
+            doc_format = DocumentationFormat(format_param)
+        except ValueError:
+            return jsonify({"error": f"Invalid format: {format_param}"}), 400
+        
+        # Get documentation
+        doc = doc_generator.get_generated_documentation(doc_id)
+        if not doc:
+            return jsonify({"error": f"Documentation not found: {doc_id}"}), 404
+        
+        # Format documentation
+        formatted_doc = doc_generator.format_documentation(doc, doc_format)
+        
+        # Set appropriate content type
+        if doc_format == DocumentationFormat.JSON:
+            return jsonify(json.loads(formatted_doc))
+        elif doc_format == DocumentationFormat.HTML:
+            return formatted_doc, 200, {'Content-Type': 'text/html'}
+        else:
+            return formatted_doc, 200, {'Content-Type': 'text/plain'}
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to retrieve documentation: {str(e)}",
+            "doc_id": doc_id
+        }), 500
+
+@app.route("/documentation/list", methods=["GET"])
+def list_documentation():
+    """
+    List all generated documentation with metadata.
+    
+    Returns:
+    {
+        "success": true,
+        "documentation": [
+            {
+                "id": "runbook_20241016_142030",
+                "title": "Database Backup Procedure",
+                "type": "runbook",
+                "generated_at": "2024-10-16T14:20:30",
+                "confidence_score": 0.85
+            }
+        ],
+        "total_count": 1
+    }
+    """
+    try:
+        docs = doc_generator.list_generated_documentation()
+        
+        return jsonify({
+            "success": True,
+            "documentation": docs,
+            "total_count": len(docs)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to list documentation: {str(e)}"
+        }), 500
+
+# ===========================
 # System Awareness API
 # ===========================
 
@@ -475,23 +1096,24 @@ def get_command_suggestions(category):
 # ===========================
 
 # Initialize SocketIO for real-time terminal communication
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use threading mode for better Windows compatibility
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Dictionary to store active SSH sessions by session ID
 ssh_sessions = {}
 
-@app.route("/terminal")
-def terminal():
-    """
-    Serve terminal interface (legacy route with hardcoded values).
-    Note: This route contains hardcoded connection details and should be updated
-    to use dynamic parameters or removed if not needed.
-    """
-    # TODO: Remove hardcoded values or make this route dynamic
-    ip = "10.4.5.70" 
-    user = "root"
-    password = ""
-    return render_template("terminal.html", ip=ip, user=user, password=password)
+# @app.route("/terminal")
+# def terminal():
+#     """
+#     Serve terminal interface (legacy route with hardcoded values).
+#     Note: This route contains hardcoded connection details and should be updated
+#     to use dynamic parameters or removed if not needed.
+#     """
+#     # TODO: Remove hardcoded values or make this route dynamic
+#     ip = "10.4.5.70" 
+#     user = "root"
+#     password = ""
+#     return render_template("terminal.html", ip=ip, user=user, password=password)
 
 def _reader_thread(sid: str):
     """
@@ -524,7 +1146,7 @@ def _reader_thread(sid: str):
                 socketio.emit("terminal_output", {"output": data}, room=sid)
             
             # Small delay to prevent CPU spinning
-            eventlet.sleep(0.01)
+            time.sleep(0.01)
             
     except Exception as e:
         # Send error message to client
@@ -678,6 +1300,7 @@ if __name__ == "__main__":
     # Get port from environment variable or default to 8080
     port = int(os.environ.get("PORT", 8080))
     
+    print(f"Starting OpsPilot server on port {port}...")
     # Run the Flask application with SocketIO support
-    # Set debug=False for production use
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+    # Use threading mode for Windows compatibility
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, use_reloader=False)

@@ -6,8 +6,9 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 from .prompts import get_system_prompt
-from .risk_analyzer import CommandRiskAnalyzer, RiskLevel
+from .risk_analyzer import CommandRiskAnalyzer
 from .fallback_analyzer import CommandFallbackAnalyzer
+from .ml_risk_scorer import MLRiskScorer
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +37,7 @@ except TypeError:
 # Initialize analysis components
 risk_analyzer = CommandRiskAnalyzer()
 fallback_analyzer = CommandFallbackAnalyzer()
+ml_scorer = MLRiskScorer()
 
 
 def ask_ai_for_command(user_input: str, memory: list = None, system_context=None) -> dict:
@@ -112,11 +114,12 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
         if "final_command" not in ai_response:
             ai_response["final_command"] = ai_response.get("command", content)
         
-        # Analyze command risks and add safety information
+        # Analyze command risks using ML-enhanced risk scoring
         final_command = ai_response.get("final_command", "")
         if final_command:
             current_profile = system_context.get_current_profile() if system_context else None
-            risk_analysis = risk_analyzer.analyze_command(final_command, current_profile)
+            # Use ML-enhanced risk analysis with fallback to traditional analyzer
+            risk_analysis = ml_scorer.predict_risk_level(final_command, current_profile, risk_analyzer)
             
             # Add risk analysis to AI response
             ai_response.update({
