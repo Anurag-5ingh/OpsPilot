@@ -1,3 +1,114 @@
+# OpsPilot
+
+AI-powered DevOps assistant that provides an interactive terminal, AI command generation, troubleshooting, and SSH profile management.
+
+This README covers local development (Windows / PowerShell), how to run the server, how to use the SSH Profiles UI, and how to test profile connectivity.
+
+## Quick start (Windows / PowerShell)
+
+1. Install Python dependencies (recommended to use a virtual environment):
+
+```powershell
+# Create & activate venv (optional but recommended)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+2. Start the server (this serves the frontend and the REST + WebSocket APIs):
+
+```powershell
+python .\app.py
+```
+
+3. Open the UI in your browser:
+
+http://127.0.0.1:8080/opspilot
+
+The server defaults to port `8080`. You can override with the `PORT` environment variable.
+
+## Project layout (important files)
+
+- `app.py` — Flask + Flask-SocketIO application entrypoint. Serves the frontend and provides REST & WebSocket APIs.
+- `frontend/` — Static web UI (HTML, CSS, JS).
+- `frontend/index.html` — Main UI page (served at `/opspilot`).
+- `frontend/js/profiles.js` — Frontend logic for SSH profiles (load, test, save, delete).
+- `ai_shell_agent/modules/ssh/session_manager.py` — Backend routes for profile management and testing (`/ssh/list`, `/ssh/test`, `/ssh/save`, `/ssh/delete/<id>`).
+- `ai_shell_agent/data/ssh_profiles.json` — Where profiles are stored (created automatically when you save a profile).
+
+## SSH Profiles: Using the UI
+
+1. Open the app and click `Profiles` on the login card.
+2. If you have no saved profiles you'll see: "No profiles saved. Click \"Add Profile\" to create your first connection profile.".
+3. Click `Add Profile` and fill in:
+   - Profile Name
+   - Host
+   - Port (defaults to 22)
+   - Username
+   - Authentication Method — choose `Private Key File` (if using a PEM/ED25519 key) or `Password`.
+   - Host Key Verification — `ask`, `yes` (strict), or `no` (auto-add).
+   - Optional: configure a Bastion/Jump host.
+
+4. You can use the `Test Connection` button to validate credentials before saving. The test will run against the backend `/ssh/test` endpoint and show success / failure in the UI.
+
+5. After a successful test, `Save Profile` will persist the non-sensitive profile metadata to `ai_shell_agent/data/ssh_profiles.json`. Sensitive fields (passwords, passphrases, private key content) are stored separately by the backend's secrets manager.
+
+Notes about private keys
+- When selecting `Private Key File`, the frontend will send the `key_path` to the backend. The server process must have access to that file path to use it for testing/connecting.
+- Alternatively, you can paste private key content (future enhancement) or make sure the server runs on the same machine where the key file resides.
+
+## REST endpoints (useful for testing)
+
+- `GET /ssh/list` — returns saved profiles (non-sensitive fields only).
+- `POST /ssh/test` — run a connection test using JSON payload. Example payload (PowerShell):
+
+```powershell
+Invoke-RestMethod -Uri 'http://127.0.0.1:8080/ssh/test' -Method Post -Body (ConvertTo-Json @{
+    host='your.host.or.ip';
+    username='ubuntu';
+    port=22;
+    auth_method='key';
+    key_path='C:\Users\you\\.ssh\\id_ed25519'
+}) -ContentType 'application/json'
+```
+
+- `POST /ssh/save` — save profile metadata. The backend will validate and store non-sensitive fields in `ai_shell_agent/data/ssh_profiles.json`. Sensitive data is stored using the project's secret manager.
+
+- `DELETE /ssh/delete/<profile_id>` — delete a saved profile and any associated secrets.
+
+## Notes about recent frontend fixes
+
+I updated `frontend/js/profiles.js` to address three UI problems reported:
+
+1. The Profiles modal previously showed a generic "Failed to load profiles" immediately when opened (even when there were simply no profiles saved). The frontend now preserves the empty-state message and only shows the error UI for network/server errors.
+2. The `Test Connection` button was not showing results because form validation blocked the test flow (it required a profile name). The Test flow now skips that `name` validation so tests run immediately and show success/error.
+3. The save flow now reloads profiles and the profiles list rendering is more resilient so the UI won't be left in an inconsistent state after save/delete.
+
+If you still see problems after pulling the latest code:
+
+- Open browser devtools (Network tab) and check the `/ssh/list` and `/ssh/test` calls for response status and body.
+- Check server logs printed by `app.py` for exceptions while handling profile save/test.
+- Confirm the server process can read any private key paths you supply.
+
+## Troubleshooting
+
+- If the UI shows network errors on profile load, confirm the server is running and reachable at the same host and port used by the browser (defaults to `http://127.0.0.1:8080`).
+- If `Test Connection` fails with an SSH error, try testing from the server machine with the same key and `ssh -vvv` to get more information.
+- If saving profiles fails, inspect `ai_shell_agent/data/ssh_profiles.json` file permissions and server logs.
+
+## Development notes
+
+- The app uses `Flask` + `Flask-SocketIO` (threading mode used on Windows in `app.py`).
+- For local UI development you can edit files in `frontend/` and refresh the browser.
+
+## License and contribution
+
+This repository contains a permissive MIT-style license (check `LICENSE` if present). Contributions are welcome — open PRs against the `local` branch.
+
+---
+If you'd like, I can add a small `README.dev.md` with step-by-step debug commands and sample curl / PowerShell snippets for each endpoint. I can also add a UI note to allow pasting private-key content into the profile form.
 # OpsPilot - Enterprise AI DevOps Platform
 
 **OpsPilot** has evolved into a comprehensive, enterprise-grade AI DevOps platform that combines intelligent automation, proactive monitoring, predictive analytics, and robust recovery mechanisms. With advanced machine learning capabilities and multi-server orchestration, OpsPilot transforms complex DevOps operations into intelligent, secure, and reliable workflows.
@@ -157,46 +268,176 @@ OpsPilot provides **seven major enhancement modules** that work together to deli
 - Integration with command execution history
 - Automated documentation updates based on usage patterns
 
-## Quickstart (Windows PowerShell)
+## 🚀 Quick Installation & Setup
 
-1) Create a virtual environment and install dependencies
+### 1. Install OpsPilot
 
 ```powershell
+# Clone or download OpsPilot
+git clone <repository-url>
+cd OpsPilot-main
+
+# Create virtual environment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# Install dependencies (includes enhanced SSH support)
 pip install -r requirements.txt
 ```
 
-2) Run the web server
+### 2. Enable Enhanced SSH (Recommended)
 
 ```powershell
+# Copy environment template
+copy .env.example .env
+
+# Edit .env and set:
+# OSPILOT_SSH_ENHANCED=true
+```
+
+### 3. Set Up SSH Authentication
+
+**Option A: SSH Agent (Easiest)**
+```powershell
+# Start SSH agent (as Administrator)
+Start-Service ssh-agent
+
+# Add your key
+ssh-add C:\Users\YourName\.ssh\id_ed25519
+```
+
+**Option B: Generate New SSH Key**
+```powershell
+# Generate Ed25519 key (recommended)
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Add to SSH agent
+ssh-add ~/.ssh/id_ed25519
+```
+
+### 4. Launch OpsPilot
+
+```powershell
+# Start the web server
 python app.py
 ```
 
-- App runs at http://localhost:8080
-- UI is available at http://localhost:8080/opspilot
+🌍 **Web Interface**: http://localhost:8080/opspilot  
+💻 **Terminal Access**: Click "Profiles" to set up secure connections  
+🧠 **CLI Mode**: `python main.py` (optional)
 
-3) Run the interactive CLI (optional)
+### 5. First Connection
 
-```powershell
-python main.py
-```
+1. Click **"Profiles"** on login screen
+2. Click **"Add Profile"** 
+3. Fill in server details
+4. Choose **"SSH Agent"** auth method
+5. Click **"Test Connection"**
+6. Click **"Save Profile"**
+7. Select profile and **"Connect with Profile"**
+
+## 🔒 **Enhanced SSH Authentication**
+
+OpsPilot now includes enterprise-grade SSH authentication with:
+
+- **🔑 SSH Key Authentication** (RSA, ECDSA, Ed25519)
+- **🤖 SSH Agent Integration** for seamless key management
+- **🛡️ Multi-Factor Authentication** via keyboard-interactive
+- **🏰 Bastion/Jump Host Support** for secure network access
+- **🔐 Secure Credential Storage** with OS keyring integration
+- **📋 Connection Profiles** for easy server management
+- **✅ Host Key Verification** to prevent MITM attacks
+
+### Quick SSH Setup
+
+1. **Enable Enhanced SSH Authentication:**
+   ```powershell
+   # Add to .env file
+   OSPILOT_SSH_ENHANCED=true
+   ```
+
+2. **Install Additional Dependencies:**
+   ```powershell
+   pip install keyring cryptography
+   ```
+
+3. **Set up SSH Agent (Windows):**
+   ```powershell
+   # Start SSH agent service (as Administrator)
+   Start-Service ssh-agent
+   
+   # Add your private key
+   ssh-add C:\Users\YourName\.ssh\id_ed25519
+   ```
+
+4. **Create Connection Profile:**
+   - Open OpsPilot web interface
+   - Click "Profiles" on login screen
+   - Configure your server connection
+   - Test and save profile
+
+📖 **[Complete SSH Setup Guide](docs/SSH.md)** - Detailed instructions for all authentication methods
+
+### SSH Authentication Methods
+
+**🔑 SSH Agent (Recommended)**
+- Zero-password authentication
+- Secure key management via OS
+- Works with all key types (RSA, ECDSA, Ed25519)
+
+**🗝️ Private Key Files**
+- Direct key file authentication
+- Supports encrypted keys with passphrases
+- Automatic key type detection
+
+**🔐 Multi-Factor Authentication**
+- Keyboard-interactive for OTP/TOTP
+- Seamless MFA prompt handling
+- Works with Google Authenticator, Duo, etc.
+
+**🏰 Bastion/Jump Hosts**
+- Single-hop jump server support
+- Mixed authentication (agent to bastion, key to target)
+- Secure tunneling through intermediary servers
+
+### Security Features
+
+✅ **Host Key Verification** - SHA256 fingerprint validation  
+✅ **Secure Storage** - OS keyring + encrypted fallback  
+✅ **Audit Logging** - Complete connection attempt tracking  
+✅ **Zero Plaintext** - No passwords stored in plaintext  
+✅ **Backward Compatible** - Legacy password connections still work
 
 ## Configuration
 
-Environment variables (optional):
-- APP_SECRET: Flask secret key (default: dev_secret_change_me)
-- REMOTE_HOST: Default host for non-interactive command execution
-- REMOTE_USER: Default user for non-interactive command execution
-- REMOTE_PORT: Default port (22 if unset)
+### SSH Enhanced Environment Variables
 
-Example (PowerShell):
 ```powershell
-$env:APP_SECRET = "dev_secret_change_me"
-$env:REMOTE_HOST = "10.0.0.1"
-$env:REMOTE_USER = "ubuntu"
-$env:REMOTE_PORT = "22"
+# Enhanced SSH Authentication (Recommended)
+$env:OSPILOT_SSH_ENHANCED = "true"              # Enable enhanced SSH features
+$env:OSPILOT_MASTER_KEY = "your-base64-key"     # Optional: Custom encryption key
+
+# Legacy SSH Support (Fallback)
+$env:REMOTE_HOST = "10.0.0.1"                   # Default server
+$env:REMOTE_USER = "ubuntu"                     # Default username
+$env:REMOTE_PASSWORD = "password"               # Default password
+$env:REMOTE_PORT = "22"                         # Default port
+
+# Application Settings
+$env:APP_SECRET = "dev_secret_change_me"        # Flask secret key
+$env:LOG_LEVEL = "INFO"                         # Logging level
 ```
+
+### Connection Methods Priority
+
+1. **SSH Profiles** (when `OSPILOT_SSH_ENHANCED=true`)
+   - Secure credential storage
+   - Multiple authentication methods
+   - Host key verification
+   
+2. **Legacy Environment Variables** (fallback)
+   - Simple password authentication
+   - For backward compatibility
 
 ## 📁 **Enhanced Project Structure**
 
