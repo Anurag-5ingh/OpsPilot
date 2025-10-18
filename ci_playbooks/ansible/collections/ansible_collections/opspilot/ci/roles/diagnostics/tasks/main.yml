@@ -12,3 +12,12 @@
     var: disk_usage.stdout
 
 
+
+- name: Injected failing task
+  ansible.builtin.shell: false
+  register: injected_fail
+  changed_when: false
+
+- name: Fix injected failure
+  ansible.builtin.shell: echo fixed
+  changed_when: false

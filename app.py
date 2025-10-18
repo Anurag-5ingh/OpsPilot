@@ -1105,6 +1105,14 @@ def get_command_suggestions(category):
 # Use threading mode for better Windows compatibility
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# Add CORS headers for all routes
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 # Dictionary to store active SSH sessions by session ID
 ssh_sessions = {}
 
@@ -1179,18 +1187,15 @@ def start_ssh(data):
     {
         "ip": "server IP/hostname",
         "user": "SSH username", 
-        "password": "SSH password (optional)"
+        "password": "SSH password (optional)",
+        "profileId": "connection profile ID (optional)"
     }
     """
     sid = request.sid
+    profile_id = (data or {}).get("profileId")
     ip = (data or {}).get("ip")
     user = (data or {}).get("user")
     password = (data or {}).get("password", "")
-    
-    # Validate required parameters
-    if not ip or not user:
-        emit("terminal_output", {"output": "\r\nMissing IP or Username.\r\n"})
-        return
     
     # Close existing session if any
     old = ssh_sessions.pop(sid, None)
@@ -1205,19 +1210,82 @@ def start_ssh(data):
             pass
     
     try:
-        # Create new SSH client
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client = None
         
-        # Connect with appropriate authentication method
-        client.connect(
-            hostname=str(ip),
-            username=str(user),
-            password=password if password else None,
-            look_for_keys=not password,  # Only use keys if password not provided
-            allow_agent=not password,    # Allow agent if no password
-            timeout=10
-        )
+        # Try profile-based connection first if enhanced SSH is enabled
+        if profile_id and os.getenv('OSPILOT_SSH_ENHANCED', 'true').lower() == 'true':
+            try:
+                from ai_shell_agent.modules.ssh.session_manager import _get_profile_by_id
+                from ai_shell_agent.modules.ssh.client import connect_with_profile
+                
+                profile = _get_profile_by_id(profile_id)
+                if profile:
+                    # Host key callback for WebSocket
+                    def hostkey_callback(hostname, key_type, fingerprint):
+                        emit("hostkey_unknown", {
+                            "hostname": hostname,
+                            "key_type": key_type,
+                            "fingerprint": fingerprint
+                        })
+                        # For now, auto-accept (can be enhanced with user interaction)
+                        return True
+                    
+                    # Auth prompt callback for WebSocket
+                    def auth_callback(title, instructions, prompts):
+                        emit("auth_prompt", {
+                            "title": title,
+                            "instructions": instructions,
+                            "prompts": prompts
+                        })
+                        # For now, return empty (can be enhanced with user interaction)
+                        return []
+                    
+                    client = connect_with_profile(
+                        profile,
+                        on_auth_prompt=auth_callback,
+                        on_hostkey_decision=hostkey_callback
+                    )
+                    
+                    if client:
+                        ip = profile['host']
+                        user = profile['username']
+                else:
+                    emit("terminal_output", {"output": f"\r\nProfile {profile_id} not found.\r\n"})
+                    return
+            except Exception as e:
+                emit("terminal_output", {"output": f"\r\nProfile connection failed: {e}\r\n"})
+                # Fall through to legacy connection
+        
+        # Fallback to legacy connection
+        if client is None:
+            # Validate required parameters for legacy mode
+            if not ip or not user:
+                emit("terminal_output", {"output": "\r\nMissing IP/Username or valid profile.\r\n"})
+                return
+            
+            # Create legacy SSH client
+            client = paramiko.SSHClient()
+            
+            # Use enhanced host key policy if available
+            if os.getenv('OSPILOT_SSH_ENHANCED', 'true').lower() == 'true':
+                try:
+                    from ai_shell_agent.modules.ssh.hostkeys import host_key_manager
+                    policy = host_key_manager.create_policy(strict_mode="no")
+                    client.set_missing_host_key_policy(policy)
+                except ImportError:
+                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            else:
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            # Connect with appropriate authentication method
+            client.connect(
+                hostname=str(ip),
+                username=str(user),
+                password=password if password else None,
+                look_for_keys=not password,  # Only use keys if password not provided
+                allow_agent=not password,    # Allow agent if no password
+                timeout=10
+            )
         
         # Create interactive shell channel
         chan = client.invoke_shell(term="xterm")
