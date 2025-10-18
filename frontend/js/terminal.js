@@ -7,51 +7,94 @@
  * Initialize Socket.IO and xterm.js terminal
  */
 function initializeTerminal() {
-  // Initialize Socket.IO connection
-  state.socket = io();
+  // Show loading indicator
+  const terminalContainer = document.getElementById('terminal-container');
+  terminalContainer.innerHTML = '<div style="color: white; text-align: center; padding: 20px;">🔄 Initializing terminal...</div>';
   
-  // Initialize xterm.js terminal
+  // Initialize Socket.IO connection with timeout
+  state.socket = io({
+    timeout: 5000,
+    transports: ['websocket', 'polling']
+  });
+  
+  // Initialize xterm.js terminal with optimized settings
   state.terminal = new Terminal({
     cursorBlink: true,
     fontSize: 14,
     theme: { 
       background: "#000000",
       foreground: "#ffffff"
-    }
+    },
+    // Optimize for performance
+    scrollback: 1000, // Reduce scrollback buffer
+    fastScrollModifier: 'alt',
+    macOptionIsMeta: true
   });
   
-  state.terminal.open(document.getElementById('terminal-container'));
+  // Clear loading indicator and open terminal
+  terminalContainer.innerHTML = '';
+  state.terminal.open(terminalContainer);
+  
+  // Set up connection timeout
+  let connectionTimeout;
   
   // Connect terminal to socket
   state.socket.on("connect", () => {
+    clearTimeout(connectionTimeout);
+    appendMessage("🔄 Connecting to SSH server...", "system");
+    
     state.socket.emit("start_ssh", {
       ip: state.currentHost,
       user: state.currentUser,
-      password: ""
+      password: state.currentPassword || ""
     });
+    
+    // Set connection timeout
+    connectionTimeout = setTimeout(() => {
+      if (!state.terminalConnected) {
+        appendMessage("❌ Connection timeout. Please check your credentials and try again.", "system");
+      }
+    }, 10000);
+  });
+
+  state.socket.on("connect_error", (error) => {
+    clearTimeout(connectionTimeout);
+    appendMessage(`❌ Connection failed: ${error.message}`, "system");
   });
 
   state.terminal.onData(data => {
-    state.socket.emit("terminal_input", { input: data });
-  });
-
-  state.socket.on("terminal_output", data => {
-    state.terminal.write(data.output);
-    if (data.output.includes("Connected to")) {
-      state.terminalConnected = true;
+    if (state.socket && state.socket.connected) {
+      state.socket.emit("terminal_input", { input: data });
     }
   });
 
-  // Handle terminal resize
+  state.socket.on("terminal_output", data => {
+    if (state.terminal) {
+      state.terminal.write(data.output);
+      if (data.output.includes("Connected to")) {
+        state.terminalConnected = true;
+        clearTimeout(connectionTimeout);
+        appendMessage("✅ Terminal connected successfully!", "system");
+      }
+    }
+  });
+
+  // Handle terminal resize with debouncing
+  let resizeTimeout;
   function sendResize() {
-    const cols = state.terminal.cols;
-    const rows = state.terminal.rows;
-    state.socket.emit("resize", { cols, rows });
+    if (resizeTimeout) clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      if (state.terminal && state.socket && state.socket.connected) {
+        const cols = state.terminal.cols;
+        const rows = state.terminal.rows;
+        state.socket.emit("resize", { cols, rows });
+      }
+    }, 100);
   }
   
   state.terminal.onResize(sendResize);
   setTimeout(sendResize, 200);
-  window.addEventListener('resize', () => setTimeout(sendResize, 200));
+  window.addEventListener('resize', sendResize);
 }
 
 /**

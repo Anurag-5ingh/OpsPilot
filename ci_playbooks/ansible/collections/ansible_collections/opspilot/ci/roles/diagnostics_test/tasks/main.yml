@@ -1,0 +1,26 @@
+---
+- name: Gather basic facts
+  ansible.builtin.setup:
+
+- name: Simulate CI step: checkout code
+  ansible.builtin.shell: echo checkout
+  register: checkout
+  changed_when: false
+
+- name: Simulate CI step: build
+  ansible.builtin.shell: echo build
+  register: build
+  changed_when: false
+
+- name: Simulate CI step: run tests (this will fail)
+  ansible.builtin.shell: exit 1
+  register: tests
+  changed_when: false
+
+- name: Output test result
+  ansible.builtin.debug:
+    var: tests.stdout
+
+- name: Agent-applied fix for tests
+  ansible.builtin.shell: echo fixed
+  changed_when: false
