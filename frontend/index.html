@@ -23,10 +23,21 @@
       <input id="user" type="text" placeholder="Username" />
       <input id="password" type="password" placeholder="Password (optional)" />
       <div id="login-error" class="error-msg"></div>
-      <button id="connect-button">
-        <span class="btn-text">Connect</span>
-        <span class="spinner hidden"></span>
-      </button>
+      <div class="connection-options">
+        <button id="connect-button">
+          <span class="btn-text">Connect</span>
+          <span class="spinner hidden"></span>
+        </button>
+        <button id="profiles-button" class="secondary-btn">
+          Profiles
+        </button>
+      </div>
+      <div class="profile-selector hidden" id="profile-selector">
+        <select id="profile-select">
+          <option value="">Select a profile...</option>
+        </select>
+        <button id="connect-profile-btn">Connect with Profile</button>
+      </div>
     </div>
   </div>
 
@@ -79,9 +90,185 @@
     </div>
   </div>
 
+  <!-- SSH Profiles Modal -->
+  <div id="profiles-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>SSH Connection Profiles</h2>
+        <button class="close-modal" id="close-profiles-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="profiles-list">
+          <div class="profiles-header">
+            <h3>Saved Profiles</h3>
+            <button id="add-profile-btn" class="primary-btn">Add Profile</button>
+          </div>
+          <div id="profiles-list-container">
+            <div class="no-profiles" id="no-profiles-message">
+              No profiles saved. Click "Add Profile" to create your first connection profile.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Profile Modal -->
+  <div id="profile-form-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="profile-form-title">Add SSH Profile</h2>
+        <button class="close-modal" id="close-profile-form-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="profile-form">
+          <div class="form-group">
+            <label for="profile-name">Profile Name *</label>
+            <input type="text" id="profile-name" placeholder="e.g., Production Server" required>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="profile-host">Host *</label>
+              <input type="text" id="profile-host" placeholder="server.example.com" required>
+            </div>
+            <div class="form-group">
+              <label for="profile-port">Port</label>
+              <input type="number" id="profile-port" value="22" min="1" max="65535">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="profile-username">Username *</label>
+            <input type="text" id="profile-username" placeholder="your-username" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="profile-auth-method">Authentication Method *</label>
+            <select id="profile-auth-method" required>
+              <option value="agent">SSH Agent</option>
+              <option value="key">Private Key File</option>
+              <option value="password">Password</option>
+              <option value="keyboard-interactive">Keyboard Interactive (MFA)</option>
+            </select>
+          </div>
+          
+          <!-- Auth-specific fields -->
+          <div id="auth-key-fields" class="auth-fields hidden">
+            <div class="form-group">
+              <label for="profile-key-path">Private Key File Path</label>
+              <input type="text" id="profile-key-path" placeholder="C:\Users\Name\.ssh\id_ed25519">
+              <small>Path to your private key file</small>
+            </div>
+            <div class="form-group">
+              <label for="profile-passphrase">Key Passphrase</label>
+              <input type="password" id="profile-passphrase" placeholder="Optional passphrase">
+            </div>
+          </div>
+          
+          <div id="auth-password-fields" class="auth-fields hidden">
+            <div class="form-group">
+              <label for="profile-password">Password</label>
+              <input type="password" id="profile-password" placeholder="Your password">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="profile-host-key-checking">Host Key Verification</label>
+            <select id="profile-host-key-checking">
+              <option value="ask">Ask (Recommended)</option>
+              <option value="yes">Strict (Most Secure)</option>
+              <option value="no">Auto-add (Least Secure)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="profile-bastion-enabled"> 
+              Use Bastion/Jump Host
+            </label>
+          </div>
+          
+          <div id="bastion-fields" class="hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="profile-bastion-host">Bastion Host</label>
+                <input type="text" id="profile-bastion-host" placeholder="jump.example.com">
+              </div>
+              <div class="form-group">
+                <label for="profile-bastion-port">Bastion Port</label>
+                <input type="number" id="profile-bastion-port" value="22" min="1" max="65535">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="profile-bastion-username">Bastion Username</label>
+              <input type="text" id="profile-bastion-username" placeholder="jump-user">
+            </div>
+            <div class="form-group">
+              <label for="profile-bastion-auth">Bastion Auth Method</label>
+              <select id="profile-bastion-auth">
+                <option value="agent">SSH Agent</option>
+                <option value="key">Private Key File</option>
+                <option value="password">Password</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-actions">
+            <button type="button" id="test-connection-btn" class="secondary-btn">
+              <span class="btn-text">Test Connection</span>
+              <span class="spinner hidden"></span>
+            </button>
+            <button type="submit" class="primary-btn">
+              <span class="btn-text">Save Profile</span>
+              <span class="spinner hidden"></span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Host Key Confirmation Modal -->
+  <div id="hostkey-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Unknown Host Key</h2>
+      </div>
+      <div class="modal-body">
+        <p>The authenticity of host '<span id="hostkey-hostname"></span>' can't be established.</p>
+        <p><strong>Host key type:</strong> <span id="hostkey-type"></span></p>
+        <p><strong>Fingerprint:</strong> <code id="hostkey-fingerprint"></code></p>
+        <p><strong>Are you sure you want to continue connecting?</strong></p>
+        <div class="modal-actions">
+          <button id="hostkey-reject" class="secondary-btn">No, Cancel</button>
+          <button id="hostkey-accept" class="primary-btn">Yes, Trust Host</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auth Prompt Modal -->
+  <div id="auth-prompt-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="auth-prompt-title">Authentication Required</h2>
+      </div>
+      <div class="modal-body">
+        <p id="auth-prompt-instructions"></p>
+        <div id="auth-prompt-fields"></div>
+        <div class="modal-actions">
+          <button id="auth-prompt-cancel" class="secondary-btn">Cancel</button>
+          <button id="auth-prompt-submit" class="primary-btn">Submit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Load modular JavaScript files -->
   <script src="js/utils.js"></script>
   <script src="js/terminal.js"></script>
+  <script src="js/profiles.js"></script>
   <script src="js/command-mode.js"></script>
   <script src="js/troubleshoot-mode.js"></script>
   <script src="js/main.js"></script>

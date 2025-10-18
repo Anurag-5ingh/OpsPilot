@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CI Simulation</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px }
+    .job { border: 1px solid #ddd; padding: 12px; margin-bottom: 8px }
+    .task { padding: 6px }
+    .ok { color: green }
+    .fail { color: red }
+  </style>
+</head>
+<body>
+  <h1>CI Simulation - Jenkins UI</h1>
+  <p>Simulated job: <strong>diagnostics-ci</strong></p>
+  <div id="job"></div>
+
+  <script>
+    async function refresh() {
+      const r = await fetch('/ci_status.json?_=' + Date.now());
+      const s = await r.json();
+      const el = document.getElementById('job');
+      el.innerHTML = '';
+      s.tasks.forEach(t => {
+        const d = document.createElement('div');
+        d.className = 'task';
+        d.innerHTML = `<strong>${t.name}</strong>: <span class='${t.status}'>${t.status}</span>`;
+        el.appendChild(d);
+      });
+      if (s.job_url) {
+        const link = document.createElement('p');
+        link.innerHTML = `Jenkins job: <a href='${s.job_url}' target='_blank'>${s.job_url}</a>`;
+        el.appendChild(link);
+      }
+    }
+    setInterval(refresh, 1000);
+    refresh();
+  </script>
+</body>
+</html>
