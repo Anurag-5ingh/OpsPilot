@@ -441,35 +441,77 @@ function getProfileFormData(forTest = false) {
 async function testConnection() {
   const testBtn = document.getElementById('test-connection-btn');
   setButtonLoading(testBtn, true);
-  
+  const msgEl = document.getElementById('profile-form-message');
+  if (msgEl) {
+    msgEl.className = 'profile-message';
+    msgEl.textContent = '🔄 Testing connection...';
+    msgEl.classList.remove('hidden');
+  }
+
   try {
-    const formData = getProfileFormData();
-    
-    // Show loading indicator
-    showSuccess('🔄 Testing connection...');
-    
+    const formData = getProfileFormData(true);
+
     const response = await fetch('/ssh/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
     });
-    
+
     const result = await response.json();
-    
+
     if (response.ok && result.success) {
-      showSuccess('✅ Connection test successful!');
+      if (msgEl) {
+        msgEl.className = 'profile-message success';
+        msgEl.textContent = '✅ Connection test successful!';
+      } else {
+        showSuccess('✅ Connection test successful!');
+      }
+      // Also update top-level login error area as a visible fallback
+      const loginErr = document.getElementById('login-error');
+      if (loginErr) {
+        loginErr.textContent = '✅ Connection test successful!';
+        loginErr.style.color = 'green';
+        loginErr.style.display = 'block';
+        setTimeout(() => { loginErr.style.display = 'none'; loginErr.style.color = 'red'; }, 3000);
+      }
       if (result.host_key_info) {
         console.log('Host key info:', result.host_key_info);
       }
     } else {
       const errorMsg = result.details || result.error || 'Connection test failed';
-      showError(`❌ Connection test failed: ${errorMsg}`);
+      if (msgEl) {
+        msgEl.className = 'profile-message error';
+        msgEl.textContent = `❌ Connection test failed: ${errorMsg}`;
+      } else {
+        showError(`❌ Connection test failed: ${errorMsg}`);
+      }
+      const loginErr = document.getElementById('login-error');
+      if (loginErr) {
+        loginErr.textContent = `❌ Connection test failed: ${errorMsg}`;
+        loginErr.style.color = 'red';
+        loginErr.style.display = 'block';
+        setTimeout(() => { loginErr.style.display = 'none'; }, 5000);
+      }
     }
   } catch (error) {
     console.error('Test connection error:', error);
-    showError('❌ Connection test error: ' + error.message);
+    const msg = '❌ Connection test error: ' + (error.message || error);
+    if (msgEl) {
+      msgEl.className = 'profile-message error';
+      msgEl.textContent = msg;
+    } else {
+      showError(msg);
+    }
+    const loginErr = document.getElementById('login-error');
+    if (loginErr) {
+      loginErr.textContent = msg;
+      loginErr.style.color = 'red';
+      loginErr.style.display = 'block';
+      setTimeout(() => { loginErr.style.display = 'none'; }, 5000);
+    }
   } finally {
     setButtonLoading(testBtn, false);
+    if (msgEl) setTimeout(() => msgEl.classList.add('hidden'), 7000);
   }
 }
 

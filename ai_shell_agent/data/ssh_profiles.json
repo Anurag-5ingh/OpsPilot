@@ -1,20 +1,6 @@
 [
   {
-    "id": "1d8dcf40-5552-4f06-81a5-46f8e75af1f5",
-    "name": "kanpur",
-    "host": "144.24.156.236",
-    "port": 22,
-    "username": "ubuntu",
-    "auth_method": "key",
-    "key_source": "file",
-    "key_type": "auto",
-    "key_path": "C:\\Users\\amren\\.ssh\\oci-test.key",
-    "strict_host_key_checking": "ask",
-    "created_at": null,
-    "updated_at": null
-  },
-  {
-    "id": "61054dc4-ee63-485f-b1db-fdaeff750e6b",
+    "id": "c9a5cde2-c368-43c0-8ef8-b59ebe08bd43",
     "name": "kanpur",
     "host": "144.24.156.236",
     "port": 22,
