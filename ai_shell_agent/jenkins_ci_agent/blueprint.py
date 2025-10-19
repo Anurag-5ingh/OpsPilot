@@ -64,6 +64,75 @@ def intervene():
 	return jsonify({"success": True, "run_id": run_id, "changed": changed, "message": message})
 
 
+@ci_bp.route("/ask_fix", methods=["POST"])
+def ask_fix():
+	"""
+	Ask the AI agent to analyze the latest events for a run and produce a troubleshooting plan.
+	Minimal input: { "run_id": "123", "host": "host", "username": "user" }
+
+	This endpoint will locate recent event payloads for the run, build an error_text
+	(simple concatenation of recent logs/payloads), call the existing troubleshooting
+	AI helper via import to generate a plan, store the plan as a ci_event and return it.
+	"""
+	data = request.get_json(silent=True) or {}
+	run_id = str(data.get("run_id") or "")
+	host = data.get("host")
+	username = data.get("username")
+
+	if not run_id:
+		return jsonify({"error": "run_id is required"}), 400
+
+	# Retrieve run and events
+	run = store.get_run(run_id)
+	if not run:
+		return jsonify({"error": "run not found", "run_id": run_id}), 404
+
+	# Build a lightweight error_text from recent events (prefer jenkins_webhook payloads)
+	events = run.get("events", [])
+	snippets = []
+	for e in events[-5:]:
+		snippets.append(f"[{e.get('type')}] {e.get('payload')}")
+	error_text = "\n---\n".join(snippets) or "No event payloads available"
+
+	# Lazy import to avoid circular imports
+	try:
+		from ai_shell_agent.modules.troubleshooting.ai_handler import ask_ai_for_troubleshoot
+	except Exception:
+		return jsonify({"error": "Troubleshooting module unavailable"}), 500
+
+	# Prepare context for AI (include optional host info)
+	context = {
+		"run": run,
+		"host": host,
+		"username": username
+	}
+
+	try:
+		result = ask_ai_for_troubleshoot(error_text, context=context)
+	except Exception as e:
+		return jsonify({"error": f"AI troubleshoot failed: {e}"}), 500
+
+	if not result or not result.get("success"):
+		return jsonify({"error": "Failed to generate troubleshooting plan", "details": result}), 500
+
+	plan = result.get("troubleshoot_response") or {}
+	# Store plan as an event for audit/history
+	store.add_event(run_id, "ask_fix_plan", json.dumps(plan)[:100000])
+
+	return jsonify({
+		"success": True,
+		"run_id": run_id,
+		"plan": {
+			"analysis": plan.get("analysis"),
+			"diagnostic_commands": plan.get("diagnostic_commands", []),
+			"fix_commands": plan.get("fix_commands", []),
+			"verification_commands": plan.get("verification_commands", []),
+			"risk_level": plan.get("risk_level"),
+			"requires_confirmation": plan.get("requires_confirmation", False)
+		}
+	})
+
+
 @ci_bp.route("/rerun", methods=["POST"])
 def rerun():
 	data = request.get_json(silent=True) or {}

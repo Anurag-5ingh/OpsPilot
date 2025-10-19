@@ -40,14 +40,48 @@ async function renderCiDashboard() {
 function renderRunDetail(run) {
 	const detailEl = document.getElementById('ci-run-detail');
 	if (!detailEl) return;
+	// Render basic info + events and an Ask-Agent button
 	detailEl.innerHTML = `
 		<div class="section-title">Run Detail</div>
 		<div><strong>Run ID:</strong> ${run.id}</div>
 		<div><strong>Job:</strong> ${run.job_name || 'unknown'}</div>
 		<div><strong>Status:</strong> ${run.status || 'unknown'}</div>
+		<div style="margin-top:8px;"><button id="ask-agent-btn" class="troubleshoot-action-btn">Ask agent to fix</button></div>
 		<div class="events-title">Events</div>
 		<div class="events">${(run.events||[]).map(e => `<pre class="event">[${new Date((e.created_at||0)*1000).toLocaleString()}] ${e.type}\n${escapeHtml(e.payload||'')}</pre>`).join('')}</div>
+		<div id="ask-agent-plan" class="ask-agent-plan"></div>
 	`;
+
+	// Ask agent button handler
+	const askBtn = document.getElementById('ask-agent-btn');
+	if (askBtn) {
+		askBtn.addEventListener('click', async () => {
+			askBtn.disabled = true;
+			askBtn.textContent = 'Analyzing...';
+			const res = await fetch('/ci/ask_fix', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ run_id: run.id })
+			});
+			const data = await res.json();
+			const planEl = document.getElementById('ask-agent-plan');
+			if (!planEl) return;
+			if (!data || !data.success) {
+				planEl.innerHTML = `<div class="message system">Failed to generate plan: ${escapeHtml(JSON.stringify(data || {}))}</div>`;
+			} else {
+				const p = data.plan || {};
+				planEl.innerHTML = `
+					<div class="section-title">AI Troubleshooting Plan</div>
+					<div><strong>Analysis:</strong><pre>${escapeHtml(p.analysis||'')}</pre></div>
+					<div><strong>Diagnostics:</strong><pre>${escapeHtml((p.diagnostic_commands||[]).join('\n')||'')}</pre></div>
+					<div><strong>Fixes:</strong><pre>${escapeHtml((p.fix_commands||[]).join('\n')||'')}</pre></div>
+					<div><strong>Verification:</strong><pre>${escapeHtml((p.verification_commands||[]).join('\n')||'')}</pre></div>
+				`;
+			}
+			askBtn.disabled = false;
+			askBtn.textContent = 'Ask agent to fix';
+		});
+	}
 }
 
 function escapeHtml(s) {
