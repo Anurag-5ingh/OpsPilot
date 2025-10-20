@@ -1,1 +1,0 @@
-{"tasks": [{"name": "checkout", "status": "ok"}, {"name": "build", "status": "ok"}, {"name": "tests", "status": "ok"}], "job_url": "http://jenkins.local/job/diagnostics-ci/123/"}
