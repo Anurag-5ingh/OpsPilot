@@ -6,6 +6,9 @@ Supports Basic Auth with API tokens and filters builds by server context.
 """
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import urllib3
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
@@ -17,6 +20,9 @@ import time
 
 from .models import BuildLog, JenkinsConfig
 from ..ssh.secrets import get_secret
+
+# Disable SSL warnings for corporate environments
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -32,25 +38,75 @@ class JenkinsService:
         self._session = requests.Session()
         self._session.timeout = 30
         
+        # Disable SSL verification for corporate/self-signed certificates
+        self._session.verify = False
+        
+        # Set up retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+        
         # Set up authentication
         self._setup_auth()
     
     def _setup_auth(self):
-        """Set up authentication headers."""
+        """Set up authentication headers using either API token or password."""
+        auth_credential = None
+        
+        # Try API token first (preferred)
         if self.config.api_token_secret_id:
             try:
-                api_token = get_secret(self.config.api_token_secret_id)
-                if api_token:
-                    # Create Basic Auth header
-                    auth_string = f"{self.username}:{api_token}"
+                auth_credential = get_secret(self.config.api_token_secret_id)
+                if auth_credential:
+                    logger.info("Using API token authentication")
+                else:
+                    logger.warning(f"Could not retrieve API token for Jenkins config {self.config.id}")
+            except Exception as e:
+                logger.error(f"Failed to retrieve API token: {e}")
+        
+        # Fallback to password if no API token
+        if not auth_credential and self.config.password_secret_id:
+            try:
+                auth_credential = get_secret(self.config.password_secret_id)
+                if auth_credential:
+                    logger.info("Using password authentication")
+                else:
+                    logger.warning(f"Could not retrieve password for Jenkins config {self.config.id}")
+            except Exception as e:
+                logger.error(f"Failed to retrieve password: {e}")
+        
+        # Set up Basic Auth if we have credentials
+        if auth_credential:
+            try:
+                auth_string = f"{self.username}:{auth_credential}"
+                auth_bytes = auth_string.encode('ascii')
+                auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+                self._auth_header = f"Basic {auth_b64}"
+                self._session.headers.update({'Authorization': self._auth_header})
+                logger.debug("Authentication header set successfully")
+            except Exception as e:
+                logger.error(f"Failed to setup Jenkins authentication: {e}")
+        else:
+            # As a last resort, check for direct credentials (fallback for keyring failures)
+            fallback_auth = getattr(self.config, '_fallback_password', None) or getattr(self.config, '_fallback_token', None)
+            if fallback_auth:
+                logger.info("Using fallback authentication")
+                try:
+                    auth_string = f"{self.username}:{fallback_auth}"
                     auth_bytes = auth_string.encode('ascii')
                     auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
                     self._auth_header = f"Basic {auth_b64}"
                     self._session.headers.update({'Authorization': self._auth_header})
-                else:
-                    logger.warning(f"Could not retrieve API token for Jenkins config {self.config.id}")
-            except Exception as e:
-                logger.error(f"Failed to setup Jenkins authentication: {e}")
+                    logger.debug("Fallback authentication header set successfully")
+                except Exception as e:
+                    logger.error(f"Failed to setup fallback Jenkins authentication: {e}")
+            else:
+                logger.warning("No valid authentication credentials found for Jenkins")
     
     def test_connection(self) -> Dict[str, Any]:
         """Test connection to Jenkins server."""
