@@ -109,66 +109,157 @@ class JenkinsService:
                 logger.warning("No valid authentication credentials found for Jenkins")
     
     def test_connection(self) -> Dict[str, Any]:
-        """Test connection to Jenkins server."""
+        """Test connection to Jenkins server with detailed error reporting."""
         logger.info(f"Testing connection to Jenkins server: {self.base_url}")
+        
+        # Validate URL format
+        if not self.base_url or not self.base_url.startswith(('http://', 'https://')):
+            error_msg = f"Invalid Jenkins URL format: {self.base_url}"
+            logger.error(f"URL validation failed: {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'error_type': 'INVALID_URL',
+                'suggestion': 'URL must start with http:// or https://'
+            }
+        
+        # Check if we have authentication configured
+        if not self._auth_header and not getattr(self.config, '_fallback_password', None) and not getattr(self.config, '_fallback_token', None):
+            error_msg = "No authentication configured - password or API token required"
+            logger.error(f"Jenkins auth check failed: {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'error_type': 'AUTHENTICATION_MISSING'
+            }
+        
         try:
             url = urljoin(self.base_url, "/api/json")
-            logger.debug(f"Making request to: {url}")
+            logger.info(f"Making request to: {url}")
             response = self._session.get(url)
             
             if response.status_code == 200:
-                data = response.json()
-                result = {
-                    'success': True,
-                    'version': data.get('version', 'Unknown'),
-                    'node_name': data.get('nodeName', 'master'),
-                    'num_jobs': len(data.get('jobs', []))
-                }
-                logger.info(f"Jenkins connection successful - Version: {result['version']}, Jobs: {result['num_jobs']}")
-                return result
+                try:
+                    data = response.json()
+                    result = {
+                        'success': True,
+                        'version': data.get('version', 'Unknown'),
+                        'node_name': data.get('nodeName', 'master'),
+                        'num_jobs': len(data.get('jobs', [])),
+                        'url_tested': url
+                    }
+                    logger.info(f"Jenkins connection successful - Version: {result['version']}, Jobs: {result['num_jobs']}")
+                    return result
+                except json.JSONDecodeError as e:
+                    error_msg = f"Invalid JSON response from Jenkins - server may not be Jenkins or may be misconfigured"
+                    logger.error(f"JSON decode error: {str(e)}")
+                    return {
+                        'success': False,
+                        'error': error_msg,
+                        'error_type': 'INVALID_RESPONSE',
+                        'response_preview': response.text[:200] + '...' if len(response.text) > 200 else response.text
+                    }
             elif response.status_code == 401:
-                error_msg = 'Authentication failed - check username and API token'
+                error_msg = 'Authentication failed - Invalid username or password/API token'
                 logger.error(f"Jenkins authentication failed for {self.base_url} - HTTP 401")
                 return {
                     'success': False,
-                    'error': error_msg
+                    'error': error_msg,
+                    'error_type': 'AUTHENTICATION_FAILED',
+                    'suggestion': 'Check your username and password. If using API token, ensure it\'s valid and not expired.'
                 }
             elif response.status_code == 403:
-                error_msg = 'Access denied - check user permissions'
+                error_msg = 'Access denied - User lacks required permissions'
                 logger.error(f"Jenkins access denied for {self.base_url} - HTTP 403")
                 return {
                     'success': False,
-                    'error': error_msg
+                    'error': error_msg,
+                    'error_type': 'PERMISSION_DENIED',
+                    'suggestion': 'Contact Jenkins administrator to grant API access permissions to your user.'
+                }
+            elif response.status_code == 404:
+                error_msg = 'Jenkins API not found - Check URL path'
+                logger.error(f"Jenkins API not found for {self.base_url} - HTTP 404")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'URL_NOT_FOUND',
+                    'suggestion': f'Verify the Jenkins URL. Tried: {url}',
+                    'url_tested': url
                 }
             else:
                 error_msg = f'HTTP {response.status_code}: {response.reason}'
                 logger.error(f"Jenkins connection failed for {self.base_url} - {error_msg}")
                 return {
                     'success': False,
-                    'error': error_msg
+                    'error': error_msg,
+                    'error_type': 'HTTP_ERROR',
+                    'status_code': response.status_code,
+                    'url_tested': url
                 }
                 
-        except requests.ConnectionError as e:
-            error_msg = 'Cannot connect to Jenkins server - check URL and network'
-            logger.error(f"Jenkins connection error for {self.base_url}: {str(e)}")
+        except requests.exceptions.SSLError as e:
+            error_msg = 'SSL Certificate verification failed'
+            ssl_details = str(e)
+            logger.error(f"Jenkins SSL error for {self.base_url}: {ssl_details}")
             return {
                 'success': False,
-                'error': error_msg
+                'error': error_msg,
+                'error_type': 'SSL_ERROR',
+                'details': ssl_details,
+                'suggestion': 'This should be fixed now, but if you still see this, the certificate may have other issues.'
+            }
+        except requests.exceptions.ConnectionError as e:
+            connection_details = str(e)
+            if "Name or service not known" in connection_details or "nodename nor servname provided" in connection_details:
+                error_msg = 'Cannot resolve hostname - Check URL'
+                error_type = 'DNS_ERROR'
+                suggestion = f'Verify the hostname in URL: {self.base_url}'
+            elif "Connection refused" in connection_details:
+                error_msg = 'Connection refused - Check URL and port'
+                error_type = 'CONNECTION_REFUSED' 
+                suggestion = f'Verify Jenkins is running on: {self.base_url}'
+            elif "timeout" in connection_details.lower():
+                error_msg = 'Network timeout - Check network connectivity'
+                error_type = 'NETWORK_TIMEOUT'
+                suggestion = 'Check network connection and firewall rules'
+            else:
+                error_msg = 'Network connection failed'
+                error_type = 'CONNECTION_ERROR'
+                suggestion = 'Check network connectivity and URL'
+            
+            logger.error(f"Jenkins connection error for {self.base_url}: {connection_details}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'error_type': error_type,
+                'details': connection_details,
+                'suggestion': suggestion,
+                'url_tested': self.base_url
             }
         except requests.Timeout as e:
-            error_msg = 'Connection timeout - server may be slow or unresponsive'
+            error_msg = 'Request timeout - Server may be slow or unresponsive'
             logger.error(f"Jenkins timeout for {self.base_url}: {str(e)}")
             return {
                 'success': False,
-                'error': error_msg
+                'error': error_msg,
+                'error_type': 'TIMEOUT',
+                'suggestion': 'Try again later or check if Jenkins server is overloaded'
             }
         except Exception as e:
-            error_msg = f'Connection test failed: {str(e)}'
+            error_msg = f'Unexpected error: {str(e)}'
             logger.error(f"Jenkins connection exception for {self.base_url}: {str(e)}")
             return {
                 'success': False,
-                'error': error_msg
+                'error': error_msg,
+                'error_type': 'UNKNOWN_ERROR',
+                'details': str(e)
             }
+    
+    def close(self):
+        """Clean up session resources."""
+        if hasattr(self, '_session') and self._session:
+            self._session.close()
     
     def get_jobs(self, server_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get list of Jenkins jobs, optionally filtered by server context."""
