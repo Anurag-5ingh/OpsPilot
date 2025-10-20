@@ -56,21 +56,38 @@ function toggleMode(mode) {
   
   const commandBtn = document.getElementById("mode-command");
   const troubleshootBtn = document.getElementById("mode-troubleshoot");
+  const logsBtn = document.getElementById("mode-logs");
+  
   const commandContainer = document.getElementById("command-input-container");
   const troubleshootContainer = document.getElementById("troubleshoot-input-container");
+  const logsContainer = document.getElementById("logs-input-container");
   
-  if (mode === "command") {
+  // Remove active class from all mode buttons
+  [commandBtn, troubleshootBtn, logsBtn].forEach(btn => {
+    if (btn) btn.classList.remove("active");
+  });
+  
+  // Hide all input containers
+  [commandContainer, troubleshootContainer, logsContainer].forEach(container => {
+    if (container) container.classList.add("hidden");
+  });
+  
+  // Show the selected mode
+  if (mode === "command" && commandBtn && commandContainer) {
     commandBtn.classList.add("active");
-    troubleshootBtn.classList.remove("active");
     commandContainer.classList.remove("hidden");
-    troubleshootContainer.classList.add("hidden");
-    document.getElementById("user-input").focus();
-  } else {
+    const userInput = document.getElementById("user-input");
+    if (userInput) userInput.focus();
+  } else if (mode === "troubleshoot" && troubleshootBtn && troubleshootContainer) {
     troubleshootBtn.classList.add("active");
-    commandBtn.classList.remove("active");
     troubleshootContainer.classList.remove("hidden");
-    commandContainer.classList.add("hidden");
-    document.getElementById("error-input").focus();
+    const errorInput = document.getElementById("error-input");
+    if (errorInput) errorInput.focus();
+  } else if (mode === "logs" && logsBtn && logsContainer) {
+    logsBtn.classList.add("active");
+    logsContainer.classList.remove("hidden");
+    const serverInput = document.getElementById("server-name-input");
+    if (serverInput) serverInput.focus();
   }
 }
 

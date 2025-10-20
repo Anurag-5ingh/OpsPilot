@@ -22,6 +22,8 @@ from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, Trou
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
+from ai_shell_agent.modules.cicd import JenkinsService, AnsibleService, AILogAnalyzer, BuildLog, AnsibleConfig, FixHistory, JenkinsConfig, start_background_worker, stop_background_worker
+from ai_shell_agent.modules.ssh.secrets import set_secret, get_secret
 
 # ===========================
 # Application Configuration
@@ -53,6 +55,19 @@ compliance_checker.enable_framework(ComplianceFramework.CUSTOM)
 print("Initializing Smart Documentation Generator...")
 doc_generator = SmartDocumentationGenerator()
 print("Smart Documentation Generator initialized successfully")
+
+# Initialize CI/CD AI Analyzer
+print("Initializing CI/CD AI Analyzer...")
+cicd_analyzer = AILogAnalyzer(memory=memory, system_context=system_context)
+print("CI/CD AI Analyzer initialized successfully")
+
+# Start CI/CD background worker
+print("Starting CI/CD background worker...")
+try:
+    cicd_worker = start_background_worker(memory=memory, system_context=system_context)
+    print("CI/CD background worker started successfully")
+except Exception as e:
+    print(f"Warning: Failed to start CI/CD background worker: {e}")
 
 # Register SSH blueprint for SSH connection management endpoints
 print("Registering SSH blueprint...")
@@ -1091,6 +1106,459 @@ def get_command_suggestions(category):
         "suggestions": suggestions,
         "server_aware": system_context.get_current_profile() is not None
     })
+
+# ===========================
+# CI/CD Integration API
+# ===========================
+
+@app.route("/cicd/jenkins/connect", methods=["POST"])
+def connect_jenkins():
+    """
+    Connect to Jenkins server and save configuration.
+    
+    Request body:
+    {
+        "name": "Production Jenkins",
+        "base_url": "https://jenkins.example.com",
+        "username": "jenkins_user",
+        "api_token": "jenkins_api_token",
+        "user_id": "user123"
+    }
+    """
+    logger.info("Received Jenkins connection configuration request")
+    try:
+        data = request.get_json()
+        required_fields = ['name', 'base_url', 'username', 'api_token', 'user_id']
+        
+        for field in required_fields:
+            if not data.get(field):
+                logger.error(f"Jenkins config validation failed: missing {field}")
+                return jsonify({"error": f"{field} is required"}), 400
+        
+        logger.info(f"Configuring Jenkins: {data['name']} at {data['base_url']}")
+        
+        # Store API token securely
+        secret_id = f"jenkins_token_{data['user_id']}_{hash(data['name'])}"
+        if not set_secret(secret_id, data['api_token']):
+            return jsonify({"error": "Failed to store API token securely"}), 500
+        
+        # Create Jenkins configuration
+        jenkins_config = JenkinsConfig(
+            user_id=data['user_id'],
+            name=data['name'],
+            base_url=data['base_url'],
+            username=data['username'],
+            api_token_secret_id=secret_id
+        )
+        
+        config_id = jenkins_config.save()
+        
+        # Test connection
+        logger.info(f"Testing Jenkins connection to {data['base_url']}")
+        jenkins_service = JenkinsService(jenkins_config)
+        connection_test = jenkins_service.test_connection()
+        jenkins_service.close()
+        
+        if not connection_test.get('success'):
+            # Clean up if connection failed
+            logger.error(f"Jenkins connection test failed: {connection_test.get('error')}")
+            jenkins_config.delete()
+            return jsonify({
+                "success": False,
+                "error": f"Connection test failed: {connection_test.get('error')}"
+            }), 400
+        
+        logger.info(f"Jenkins connection test successful: {connection_test}")
+        
+        return jsonify({
+            "success": True,
+            "config_id": config_id,
+            "message": "Jenkins connection configured successfully",
+            "connection_info": connection_test
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to connect Jenkins: {e}")
+        return jsonify({"error": "Failed to configure Jenkins connection"}), 500
+
+@app.route("/cicd/ansible/connect", methods=["POST"])
+def connect_ansible():
+    """
+    Connect to Ansible configuration and save settings.
+    
+    Request body:
+    {
+        "name": "Production Ansible",
+        "local_path": "/path/to/ansible",
+        "git_repo_url": "https://github.com/user/ansible-repo.git" (optional),
+        "git_branch": "main" (optional),
+        "user_id": "user123"
+    }
+    """
+    try:
+        data = request.get_json()
+        required_fields = ['name', 'local_path', 'user_id']
+        
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"{field} is required"}), 400
+        
+        # Create Ansible configuration
+        ansible_config = AnsibleConfig(
+            user_id=data['user_id'],
+            name=data['name'],
+            local_path=data['local_path'],
+            git_repo_url=data.get('git_repo_url'),
+            git_branch=data.get('git_branch', 'main')
+        )
+        
+        config_id = ansible_config.save()
+        
+        # Test configuration
+        ansible_service = AnsibleService(ansible_config)
+        config_test = ansible_service.test_configuration()
+        
+        # Optionally sync from Git if configured
+        sync_result = None
+        if data.get('git_repo_url'):
+            sync_result = ansible_service.sync_from_git()
+        
+        result = {
+            "success": True,
+            "config_id": config_id,
+            "message": "Ansible configuration saved successfully",
+            "test_result": config_test
+        }
+        
+        if sync_result:
+            result["sync_result"] = sync_result
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to connect Ansible: {e}")
+        return jsonify({"error": "Failed to configure Ansible connection"}), 500
+
+@app.route("/cicd/builds", methods=["GET"])
+def fetch_builds():
+    """
+    Fetch builds from Jenkins for the connected server.
+    
+    Query parameters:
+    - jenkins_config_id: ID of Jenkins configuration
+    - server_name: Name of target server to filter builds
+    - limit: Number of builds to fetch (default 20)
+    """
+    try:
+        jenkins_config_id = request.args.get('jenkins_config_id')
+        server_name = request.args.get('server_name')
+        limit = int(request.args.get('limit', 20))
+        
+        if not jenkins_config_id:
+            return jsonify({"error": "jenkins_config_id is required"}), 400
+        
+        # Get Jenkins service
+        jenkins_config = JenkinsConfig.get_by_id(int(jenkins_config_id))
+        if not jenkins_config:
+            return jsonify({"error": "Jenkins configuration not found"}), 404
+        
+        jenkins_service = JenkinsService(jenkins_config)
+        
+        try:
+            # Fetch and store builds
+            builds = jenkins_service.fetch_and_store_builds(server_name, limit)
+            
+            # Convert to dict format for JSON response
+            builds_data = [build.to_dict() for build in builds]
+            
+            return jsonify({
+                "success": True,
+                "builds": builds_data,
+                "total_fetched": len(builds),
+                "server_filter": server_name
+            }), 200
+            
+        finally:
+            jenkins_service.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch builds: {e}")
+        return jsonify({"error": "Failed to fetch builds from Jenkins"}), 500
+
+@app.route("/cicd/builds/<int:build_id>/logs", methods=["GET"])
+def get_build_logs(build_id):
+    """
+    Get console logs for a specific build.
+    
+    Query parameters:
+    - jenkins_config_id: ID of Jenkins configuration
+    - lines: Number of lines to fetch (default 100)
+    """
+    try:
+        jenkins_config_id = request.args.get('jenkins_config_id')
+        lines = int(request.args.get('lines', 100))
+        
+        if not jenkins_config_id:
+            return jsonify({"error": "jenkins_config_id is required"}), 400
+        
+        # Get build log
+        build_log = BuildLog.get_by_id(build_id)
+        if not build_log:
+            return jsonify({"error": "Build not found"}), 404
+        
+        # Get Jenkins service
+        jenkins_config = JenkinsConfig.get_by_id(int(jenkins_config_id))
+        if not jenkins_config:
+            return jsonify({"error": "Jenkins configuration not found"}), 404
+        
+        jenkins_service = JenkinsService(jenkins_config)
+        
+        try:
+            # Get console logs
+            console_log = jenkins_service.get_console_log_tail(
+                build_log.job_name, 
+                build_log.build_number, 
+                lines
+            )
+            
+            return jsonify({
+                "success": True,
+                "build": build_log.to_dict(),
+                "console_log": console_log,
+                "log_lines": len(console_log.split('\n')) if console_log else 0
+            }), 200
+            
+        finally:
+            jenkins_service.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to get build logs: {e}")
+        return jsonify({"error": "Failed to retrieve build logs"}), 500
+
+@app.route("/cicd/builds/<int:build_id>/analyze", methods=["POST"])
+def analyze_build_failure():
+    """
+    Analyze a failed build and generate fix suggestions.
+    
+    Request body:
+    {
+        "jenkins_config_id": 1,
+        "ansible_config_id": 2 (optional)
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        build_id = request.view_args['build_id']
+        jenkins_config_id = data.get('jenkins_config_id')
+        ansible_config_id = data.get('ansible_config_id')
+        
+        if not jenkins_config_id:
+            return jsonify({"error": "jenkins_config_id is required"}), 400
+        
+        # Get build log
+        build_log = BuildLog.get_by_id(build_id)
+        if not build_log:
+            return jsonify({"error": "Build not found"}), 404
+        
+        # Get services
+        jenkins_config = JenkinsConfig.get_by_id(jenkins_config_id)
+        if not jenkins_config:
+            return jsonify({"error": "Jenkins configuration not found"}), 404
+        
+        jenkins_service = JenkinsService(jenkins_config)
+        
+        ansible_service = None
+        if ansible_config_id:
+            ansible_config = AnsibleConfig.get_by_id(ansible_config_id)
+            if ansible_config:
+                ansible_service = AnsibleService(ansible_config)
+        
+        try:
+            # Analyze the build failure
+            analysis_result = cicd_analyzer.analyze_build_failure(
+                build_log, 
+                jenkins_service, 
+                ansible_service
+            )
+            
+            if analysis_result.get('success'):
+                # Create fix history record
+                fix_history = cicd_analyzer.create_fix_history(analysis_result)
+                if fix_history:
+                    analysis_result['fix_history_id'] = fix_history.id
+            
+            return jsonify(analysis_result), 200
+            
+        finally:
+            jenkins_service.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to analyze build failure: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to analyze build failure"
+        }), 500
+
+@app.route("/cicd/fix/execute", methods=["POST"])
+def execute_fix_commands():
+    """
+    Execute fix commands on the target server.
+    
+    Request body:
+    {
+        "fix_history_id": 123,
+        "commands": ["sudo systemctl restart nginx"],
+        "server_profile_id": "profile123" (optional),
+        "host": "server.example.com",
+        "username": "user",
+        "password": "pass" (optional)
+    }
+    """
+    try:
+        data = request.get_json()
+        fix_history_id = data.get('fix_history_id')
+        commands = data.get('commands', [])
+        server_profile_id = data.get('server_profile_id')
+        host = data.get('host')
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not commands:
+            return jsonify({"error": "No commands provided"}), 400
+        
+        # Update fix history to mark as confirmed
+        fix_history = None
+        if fix_history_id:
+            # Note: We would need to add an update method to FixHistory model
+            # For now, we'll create a new record
+            pass
+        
+        # Execute commands via SSH
+        ssh_client = None
+        if server_profile_id:
+            # Use profile-based connection
+            ssh_client = run_shell("echo 'Connected'", profile_id=server_profile_id)[0]
+        elif host and username:
+            # Use direct connection parameters
+            ssh_client = create_ssh_client(host, username, 22, password)
+        else:
+            return jsonify({"error": "Either server_profile_id or host/username must be provided"}), 400
+        
+        if not ssh_client:
+            return jsonify({"error": "Failed to establish SSH connection"}), 500
+        
+        # Execute commands
+        results = []
+        all_success = True
+        
+        for cmd in commands:
+            try:
+                output, error = run_shell(cmd, ssh_client=ssh_client)
+                
+                command_result = {
+                    "command": cmd,
+                    "output": output,
+                    "error": error,
+                    "success": len(error.strip()) == 0,
+                    "execution_time": datetime.now(timezone.utc).isoformat()
+                }
+                
+                results.append(command_result)
+                
+                if not command_result["success"]:
+                    all_success = False
+                    
+            except Exception as e:
+                command_result = {
+                    "command": cmd,
+                    "output": "",
+                    "error": str(e),
+                    "success": False,
+                    "execution_time": datetime.now(timezone.utc).isoformat()
+                }
+                results.append(command_result)
+                all_success = False
+        
+        # Update fix history if available
+        if fix_history_id and fix_history:
+            fix_history.execution_result = {
+                "commands_executed": len(commands),
+                "successful_commands": sum(1 for r in results if r["success"]),
+                "execution_summary": results
+            }
+            fix_history.user_confirmed = True
+            fix_history.success = all_success
+            fix_history.save()
+        
+        return jsonify({
+            "success": True,
+            "results": results,
+            "all_success": all_success,
+            "summary": f"Executed {len(commands)} commands, {sum(1 for r in results if r['success'])} successful"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to execute fix commands: {e}")
+        return jsonify({"error": "Failed to execute fix commands"}), 500
+
+@app.route("/cicd/jenkins/configs", methods=["GET"])
+def list_jenkins_configs():
+    """List Jenkins configurations for a user."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+        
+        configs = JenkinsConfig.get_by_user(user_id)
+        return jsonify({
+            "success": True,
+            "configs": [config.to_dict() for config in configs]
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to list Jenkins configs: {e}")
+        return jsonify({"error": "Failed to list Jenkins configurations"}), 500
+
+@app.route("/cicd/ansible/configs", methods=["GET"])
+def list_ansible_configs():
+    """List Ansible configurations for a user."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+        
+        configs = AnsibleConfig.get_by_user(user_id)
+        return jsonify({
+            "success": True,
+            "configs": [config.to_dict() for config in configs]
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to list Ansible configs: {e}")
+        return jsonify({"error": "Failed to list Ansible configurations"}), 500
+
+@app.route("/cicd/builds/history", methods=["GET"])
+def get_build_history():
+    """Get build history for a server."""
+    try:
+        server_name = request.args.get('server_name')
+        limit = int(request.args.get('limit', 50))
+        
+        if not server_name:
+            return jsonify({"error": "server_name is required"}), 400
+        
+        builds = BuildLog.get_by_server(server_name, limit)
+        
+        return jsonify({
+            "success": True,
+            "builds": [build.to_dict() for build in builds],
+            "total": len(builds),
+            "server_name": server_name
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to get build history: {e}")
+        return jsonify({"error": "Failed to retrieve build history"}), 500
 
 # ===========================
 # WebSocket Terminal Support
