@@ -80,7 +80,8 @@ class DatabaseManager:
                     name TEXT NOT NULL,
                     base_url TEXT NOT NULL,
                     username TEXT NOT NULL,
-                    api_token_secret_id TEXT,  -- Reference to secure storage
+                    password_secret_id TEXT,  -- Reference to secure password storage
+                    api_token_secret_id TEXT,  -- Reference to secure API token storage (optional)
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_sync TIMESTAMP
@@ -389,12 +390,14 @@ class JenkinsConfig:
     """Model for Jenkins configurations."""
     
     def __init__(self, user_id: str, name: str, base_url: str, username: str,
+                 password_secret_id: Optional[str] = None,
                  api_token_secret_id: Optional[str] = None, last_sync: Optional[datetime] = None,
                  **kwargs):
         self.user_id = user_id
         self.name = name
         self.base_url = base_url.rstrip('/')  # Remove trailing slash
         self.username = username
+        self.password_secret_id = password_secret_id
         self.api_token_secret_id = api_token_secret_id
         self.last_sync = last_sync
         self.id = kwargs.get('id')
@@ -407,11 +410,11 @@ class JenkinsConfig:
             # Update existing
             query = """
                 UPDATE jenkins_configs 
-                SET name = ?, base_url = ?, username = ?, api_token_secret_id = ?,
+                SET name = ?, base_url = ?, username = ?, password_secret_id = ?, api_token_secret_id = ?,
                     last_sync = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """
-            params = (self.name, self.base_url, self.username, 
+            params = (self.name, self.base_url, self.username, self.password_secret_id,
                      self.api_token_secret_id, self.last_sync, self.id)
             db.execute_update(query, params)
             return self.id
@@ -419,11 +422,11 @@ class JenkinsConfig:
             # Insert new
             query = """
                 INSERT INTO jenkins_configs 
-                (user_id, name, base_url, username, api_token_secret_id, last_sync)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (user_id, name, base_url, username, password_secret_id, api_token_secret_id, last_sync)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             params = (self.user_id, self.name, self.base_url, self.username,
-                     self.api_token_secret_id, self.last_sync)
+                     self.password_secret_id, self.api_token_secret_id, self.last_sync)
             new_id = db.execute_insert(query, params)
             if new_id:
                 self.id = new_id
@@ -460,6 +463,7 @@ class JenkinsConfig:
             'name': self.name,
             'base_url': self.base_url,
             'username': self.username,
+            'has_password': bool(self.password_secret_id),
             'has_api_token': bool(self.api_token_secret_id),
             'last_sync': self.last_sync.isoformat() if self.last_sync else None,
             'created_at': self.created_at,

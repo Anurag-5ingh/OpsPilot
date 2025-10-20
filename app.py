@@ -1125,26 +1125,43 @@ def connect_jenkins():
         "name": "Production Jenkins",
         "base_url": "https://jenkins.example.com",
         "username": "jenkins_user",
-        "api_token": "jenkins_api_token",
+        "password": "jenkins_password" (required),
+        "api_token": "jenkins_api_token" (optional),
         "user_id": "user123"
     }
     """
     logger.info("Received Jenkins connection configuration request")
     try:
         data = request.get_json()
-        required_fields = ['name', 'base_url', 'username', 'api_token', 'user_id']
+        required_fields = ['name', 'base_url', 'username', 'user_id']
         
+        # Check required fields
         for field in required_fields:
             if not data.get(field):
                 logger.error(f"Jenkins config validation failed: missing {field}")
                 return jsonify({"error": f"{field} is required"}), 400
         
+        # Must have either password or API token
+        if not data.get('password') and not data.get('api_token'):
+            return jsonify({"error": "Either password or api_token is required"}), 400
+        
         logger.info(f"Configuring Jenkins: {data['name']} at {data['base_url']}")
         
-        # Store API token securely
-        secret_id = f"jenkins_token_{data['user_id']}_{hash(data['name'])}"
-        if not set_secret(secret_id, data['api_token']):
-            return jsonify({"error": "Failed to store API token securely"}), 500
+        # Store credentials securely
+        password_secret_id = None
+        api_token_secret_id = None
+        
+        if data.get('password'):
+            password_secret_id = f"jenkins_password_{data['user_id']}_{hash(data['name'])}"
+            if not set_secret(password_secret_id, data['password']):
+                logger.warning("Failed to store password securely, using fallback")
+                password_secret_id = None  # Will use fallback below
+        
+        if data.get('api_token'):
+            api_token_secret_id = f"jenkins_token_{data['user_id']}_{hash(data['name'])}"
+            if not set_secret(api_token_secret_id, data['api_token']):
+                logger.warning("Failed to store API token securely, using fallback")
+                api_token_secret_id = None  # Will use fallback below
         
         # Create Jenkins configuration
         jenkins_config = JenkinsConfig(
@@ -1152,8 +1169,15 @@ def connect_jenkins():
             name=data['name'],
             base_url=data['base_url'],
             username=data['username'],
-            api_token_secret_id=secret_id
+            password_secret_id=password_secret_id,
+            api_token_secret_id=api_token_secret_id
         )
+        
+        # Set fallback credentials if keyring storage failed
+        if not password_secret_id and data.get('password'):
+            jenkins_config._fallback_password = data['password']
+        if not api_token_secret_id and data.get('api_token'):
+            jenkins_config._fallback_token = data['api_token']
         
         config_id = jenkins_config.save()
         
