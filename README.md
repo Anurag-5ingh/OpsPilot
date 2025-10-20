@@ -879,7 +879,6 @@ ML Pipeline → Risk Assessment → Compliance Check → Response
 ### 🛠️ **DevOps & Deployment**
 
 - **Docker** containerization support
-- **GitHub Actions** for CI/CD pipeline
 - **pytest** for comprehensive testing framework
 - **Black** & **isort** for code formatting
 - **flake8** for code linting and quality assurance
