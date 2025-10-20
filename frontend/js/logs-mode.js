@@ -511,15 +511,96 @@ class LogsMode {
     }
     
     showJenkinsConfigModal() {
-        // For now, show a simple prompt. In a real app, create a proper modal
-        const baseUrl = prompt('Enter Jenkins base URL:');
-        const username = prompt('Enter Jenkins username:');
-        const apiToken = prompt('Enter Jenkins API token:');
-        const name = prompt('Enter configuration name:');
+        // Create modal HTML
+        const modalHTML = `
+            <div class="modal-overlay" id="jenkins-config-modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Configure Jenkins Connection</h3>
+                        <button class="modal-close" id="jenkins-modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="jenkins-name">Configuration Name:</label>
+                            <input type="text" id="jenkins-name" placeholder="e.g., Production Jenkins" value="Jenkins Config" />
+                        </div>
+                        <div class="form-group">
+                            <label for="jenkins-url">Jenkins URL:</label>
+                            <input type="url" id="jenkins-url" placeholder="https://jenkins.example.com" />
+                        </div>
+                        <div class="form-group">
+                            <label for="jenkins-username">Username:</label>
+                            <input type="text" id="jenkins-username" placeholder="your-jenkins-username" />
+                        </div>
+                        <div class="form-group">
+                            <label for="jenkins-password">Password: <span class="required">*</span></label>
+                            <input type="password" id="jenkins-password" placeholder="Your Jenkins password" />
+                            <small class="form-help">Your Jenkins login password (required)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="jenkins-token">API Token:</label>
+                            <input type="password" id="jenkins-token" placeholder="Optional: API token for enhanced security" />
+                            <small class="form-help">Optional: Leave empty to use password authentication</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="jenkins-config-cancel" class="secondary-btn">Cancel</button>
+                        <button id="jenkins-config-save" class="primary-btn">
+                            <span class="btn-text">Test & Save</span>
+                            <span class="spinner hidden"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
         
-        if (baseUrl && username && apiToken && name) {
-            this.saveJenkinsConfig(name, baseUrl, username, apiToken);
-        }
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        
+        // Setup event listeners
+        const modal = document.getElementById('jenkins-config-modal');
+        const closeBtn = document.getElementById('jenkins-modal-close');
+        const cancelBtn = document.getElementById('jenkins-config-cancel');
+        const saveBtn = document.getElementById('jenkins-config-save');
+        
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.onclick = closeModal;
+        cancelBtn.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
+        
+        saveBtn.onclick = async () => {
+            const name = document.getElementById('jenkins-name').value.trim();
+            const baseUrl = document.getElementById('jenkins-url').value.trim();
+            const username = document.getElementById('jenkins-username').value.trim();
+            const password = document.getElementById('jenkins-password').value;
+            const apiToken = document.getElementById('jenkins-token').value.trim();
+            
+            if (!name || !baseUrl || !username || !password) {
+                alert('Please fill in all required fields (Name, URL, Username, Password)');
+                return;
+            }
+            
+            window.setButtonLoading(saveBtn, true);
+            
+            try {
+                await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
+                closeModal();
+            } catch (error) {
+                console.error('Error saving Jenkins config:', error);
+            } finally {
+                window.setButtonLoading(saveBtn, false);
+            }
+        };
+        
+        // Focus first input
+        setTimeout(() => {
+            document.getElementById('jenkins-name').focus();
+        }, 100);
     }
     
     showAnsibleConfigModal() {
@@ -533,18 +614,25 @@ class LogsMode {
         }
     }
     
-    async saveJenkinsConfig(name, baseUrl, username, apiToken) {
+    async saveJenkinsConfig(name, baseUrl, username, password, apiToken = '') {
         try {
+            const requestBody = {
+                name,
+                base_url: baseUrl,
+                username,
+                password,
+                user_id: 'system' // In real app, use current user
+            };
+            
+            // Only include API token if provided
+            if (apiToken && apiToken.trim()) {
+                requestBody.api_token = apiToken.trim();
+            }
+            
             const response = await fetch('/cicd/jenkins/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name,
-                    base_url: baseUrl,
-                    username,
-                    api_token: apiToken,
-                    user_id: 'system' // In real app, use current user
-                })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
