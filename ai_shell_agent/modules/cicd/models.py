@@ -28,8 +28,9 @@ class DatabaseManager:
         self._init_database()
     
     def _init_database(self):
-        """Initialize database with required tables."""
+        """Initialize database with required tables and handle migrations."""
         with sqlite3.connect(self.db_path) as conn:
+            # Create tables with IF NOT EXISTS (safe for existing DBs)
             conn.executescript("""
                 -- Build logs table
                 CREATE TABLE IF NOT EXISTS build_logs (
@@ -73,8 +74,32 @@ class DatabaseManager:
                     FOREIGN KEY (build_id) REFERENCES build_logs (id)
                 );
                 
-                -- Jenkins configurations table
-                CREATE TABLE IF NOT EXISTS jenkins_configs (
+                -- Create indexes for better performance
+                CREATE INDEX IF NOT EXISTS idx_build_logs_server ON build_logs(target_server);
+                CREATE INDEX IF NOT EXISTS idx_build_logs_status ON build_logs(status);
+                CREATE INDEX IF NOT EXISTS idx_build_logs_started ON build_logs(started_at);
+                CREATE INDEX IF NOT EXISTS idx_fix_history_build ON fix_history(build_id);
+                CREATE INDEX IF NOT EXISTS idx_fix_history_server ON fix_history(server_id);
+            """)
+            
+            # Handle Jenkins table creation/migration separately
+            self._migrate_jenkins_configs_table(conn)
+    
+    def _migrate_jenkins_configs_table(self, conn):
+        """Create or migrate Jenkins configurations table."""
+        # Check if table exists and get its schema
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT sql FROM sqlite_master 
+            WHERE type='table' AND name='jenkins_configs'
+        """)
+        result = cursor.fetchone()
+        
+        if result is None:
+            # Table doesn't exist, create new one with full schema
+            logger.info("Creating new jenkins_configs table")
+            conn.execute("""
+                CREATE TABLE jenkins_configs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id TEXT NOT NULL,
                     name TEXT NOT NULL,
@@ -86,14 +111,17 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_sync TIMESTAMP
                 );
-                
-                -- Create indexes for better performance
-                CREATE INDEX IF NOT EXISTS idx_build_logs_server ON build_logs(target_server);
-                CREATE INDEX IF NOT EXISTS idx_build_logs_status ON build_logs(status);
-                CREATE INDEX IF NOT EXISTS idx_build_logs_started ON build_logs(started_at);
-                CREATE INDEX IF NOT EXISTS idx_fix_history_build ON fix_history(build_id);
-                CREATE INDEX IF NOT EXISTS idx_fix_history_server ON fix_history(server_id);
             """)
+        else:
+            # Table exists, check if we need to add password_secret_id column
+            table_schema = result[0]
+            if 'password_secret_id' not in table_schema:
+                logger.info("Adding password_secret_id column to existing jenkins_configs table")
+                conn.execute("""
+                    ALTER TABLE jenkins_configs 
+                    ADD COLUMN password_secret_id TEXT;
+                """)
+                conn.commit()
     
     def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute SELECT query and return results as list of dicts."""
