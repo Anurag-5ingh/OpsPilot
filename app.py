@@ -8,6 +8,7 @@
 import os
 import json
 import time
+import logging
 from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
 import paramiko
@@ -29,6 +30,9 @@ from ai_shell_agent.modules.ssh.secrets import set_secret, get_secret
 # Application Configuration
 # ===========================
 app = Flask(__name__)
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Flask secret key for session management
 # Can be overridden with APP_SECRET environment variable
