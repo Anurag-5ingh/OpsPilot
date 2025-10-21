@@ -19,7 +19,10 @@ class LogsMode {
     
     initializeUI() {
         // Logs container is now in HTML, just set up event listeners
-        this.setupEventListeners();
+        // Use a longer delay to ensure all DOM elements are ready
+        setTimeout(() => {
+            this.setupEventListeners();
+        }, 500);
     }
     
     getLogsUIHTML() {
@@ -77,43 +80,53 @@ class LogsMode {
     }
     
     setupEventListeners() {
-        // Use setTimeout to ensure DOM elements are available
-        setTimeout(() => {
-            // Configuration buttons
-            const configJenkinsBtn = document.getElementById('config-jenkins-btn');
-            if (configJenkinsBtn) {
-                configJenkinsBtn.addEventListener('click', () => this.showJenkinsConfigModal());
-                console.log('Jenkins config button event listener added');
-            } else {
-                console.warn('Jenkins config button not found');
-            }
-            
-            const configAnsibleBtn = document.getElementById('config-ansible-btn');
-            if (configAnsibleBtn) {
-                configAnsibleBtn.addEventListener('click', () => this.showAnsibleConfigModal());
-            }
-            
-            // Fetch console button
-            const fetchConsoleBtn = document.getElementById('fetch-console-btn');
-            if (fetchConsoleBtn) {
-                fetchConsoleBtn.addEventListener('click', () => this.fetchConsoleFromUrl());
-            }
-            
-            // Config selection changes
-            const jenkinsSelect = document.getElementById('jenkins-config-select');
-            if (jenkinsSelect) {
-                jenkinsSelect.addEventListener('change', (e) => {
-                    this.currentJenkinsConfig = e.target.value || null;
-                });
-            }
-            
-            const ansibleSelect = document.getElementById('ansible-config-select');
-            if (ansibleSelect) {
-                ansibleSelect.addEventListener('change', (e) => {
-                    this.currentAnsibleConfig = e.target.value || null;
-                });
-            }
-        }, 200);
+        // Configuration buttons
+        const configJenkinsBtn = document.getElementById('config-jenkins-btn');
+        if (configJenkinsBtn) {
+            configJenkinsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log('Jenkins configure button clicked');
+                this.showJenkinsConfigModal();
+            });
+            console.log('Jenkins config button event listener added');
+        } else {
+            console.warn('Jenkins config button not found');
+        }
+        
+        const configAnsibleBtn = document.getElementById('config-ansible-btn');
+        if (configAnsibleBtn) {
+            configAnsibleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log('Ansible configure button clicked');
+                this.showAnsibleConfigModal();
+            });
+        } else {
+            console.warn('Ansible config button not found');
+        }
+        
+        // Fetch console button
+        const fetchConsoleBtn = document.getElementById('fetch-console-btn');
+        if (fetchConsoleBtn) {
+            fetchConsoleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.fetchConsoleFromUrl();
+            });
+        }
+        
+        // Config selection changes
+        const jenkinsSelect = document.getElementById('jenkins-config-select');
+        if (jenkinsSelect) {
+            jenkinsSelect.addEventListener('change', (e) => {
+                this.currentJenkinsConfig = e.target.value || null;
+            });
+        }
+        
+        const ansibleSelect = document.getElementById('ansible-config-select');
+        if (ansibleSelect) {
+            ansibleSelect.addEventListener('change', (e) => {
+                this.currentAnsibleConfig = e.target.value || null;
+            });
+        }
     }
     
     async loadConfigurations() {
@@ -765,14 +778,92 @@ class LogsMode {
     }
     
     showAnsibleConfigModal() {
-        // For now, show a simple prompt. In a real app, create a proper modal
-        const name = prompt('Enter configuration name:');
-        const localPath = prompt('Enter local Ansible path:');
-        const gitRepo = prompt('Enter Git repository URL (optional):') || '';
+        // Create modal HTML
+        const modalHTML = `
+            <div class="modal-overlay" id="ansible-config-modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Configure Ansible Connection</h3>
+                        <button class="modal-close" id="ansible-modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="ansible-name">Configuration Name:</label>
+                            <input type="text" id="ansible-name" placeholder="e.g., Production Ansible" value="Ansible Config" />
+                        </div>
+                        <div class="form-group">
+                            <label for="ansible-path">Local Ansible Path: <span class="required">*</span></label>
+                            <input type="text" id="ansible-path" placeholder="/path/to/ansible" />
+                            <small class="form-help">Path to your local Ansible directory</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="ansible-repo">Git Repository URL:</label>
+                            <input type="url" id="ansible-repo" placeholder="https://github.com/user/ansible-repo.git" />
+                            <small class="form-help">Optional: Git repository for Ansible playbooks</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="ansible-branch">Git Branch:</label>
+                            <input type="text" id="ansible-branch" placeholder="main" value="main" />
+                            <small class="form-help">Git branch to use (default: main)</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="ansible-config-cancel" class="secondary-btn">Cancel</button>
+                        <button id="ansible-config-save" class="primary-btn">
+                            <span class="btn-text">Save Configuration</span>
+                            <span class="spinner hidden"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
         
-        if (name && localPath) {
-            this.saveAnsibleConfig(name, localPath, gitRepo);
-        }
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        
+        // Setup event listeners
+        const modal = document.getElementById('ansible-config-modal');
+        const closeBtn = document.getElementById('ansible-modal-close');
+        const cancelBtn = document.getElementById('ansible-config-cancel');
+        const saveBtn = document.getElementById('ansible-config-save');
+        
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.onclick = closeModal;
+        cancelBtn.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
+        
+        saveBtn.onclick = async () => {
+            const name = document.getElementById('ansible-name').value.trim();
+            const localPath = document.getElementById('ansible-path').value.trim();
+            const gitRepo = document.getElementById('ansible-repo').value.trim();
+            const branch = document.getElementById('ansible-branch').value.trim() || 'main';
+            
+            if (!name || !localPath) {
+                alert('Please fill in all required fields (Name, Local Path)');
+                return;
+            }
+            
+            window.setButtonLoading(saveBtn, true);
+            
+            try {
+                await this.saveAnsibleConfig(name, localPath, gitRepo, branch);
+                closeModal();
+            } catch (error) {
+                console.error('Error saving Ansible config:', error);
+            } finally {
+                window.setButtonLoading(saveBtn, false);
+            }
+        };
+        
+        // Focus first input
+        setTimeout(() => {
+            document.getElementById('ansible-name').focus();
+        }, 100);
     }
     
     async saveJenkinsConfig(name, baseUrl, username, password, apiToken) {
@@ -810,17 +901,24 @@ class LogsMode {
         }
     }
     
-    async saveAnsibleConfig(name, localPath, gitRepo) {
+    async saveAnsibleConfig(name, localPath, gitRepo, branch = 'main') {
         try {
+            const requestBody = {
+                name,
+                local_path: localPath,
+                user_id: 'system' // In real app, use current user
+            };
+            
+            // Only include git fields if provided
+            if (gitRepo && gitRepo.trim()) {
+                requestBody.git_repo_url = gitRepo.trim();
+                requestBody.git_branch = branch;
+            }
+            
             const response = await fetch('/cicd/ansible/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name,
-                    local_path: localPath,
-                    git_repo_url: gitRepo,
-                    user_id: 'system' // In real app, use current user
-                })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
