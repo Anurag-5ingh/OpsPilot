@@ -1145,7 +1145,18 @@ def connect_jenkins():
         if not data.get('api_token'):
             return jsonify({"error": "API token is required for Jenkins authentication"}), 400
         
-        logger.info(f"Configuring Jenkins: {data['name']} at {data['base_url']}")
+        # Normalize base URL (strip job/build/console suffixes)
+        raw_base_url = data['base_url'].strip()
+        normalized_base = raw_base_url
+        if '/job/' in normalized_base:
+            normalized_base = normalized_base.split('/job/')[0]
+        # Remove trailing specific paths like /console or /api/json if mistakenly included
+        for suffix in ['/console', '/consoleText', '/api/json']:
+            if normalized_base.endswith(suffix):
+                normalized_base = normalized_base[: -len(suffix)]
+        # Ensure no trailing slash duplication
+        normalized_base = normalized_base.rstrip('/')
+        logger.info(f"Configuring Jenkins: {data['name']} at {normalized_base}")
         
         # Store credentials securely (API token is required, password is optional)
         password_secret_id = None
@@ -1168,7 +1179,7 @@ def connect_jenkins():
         jenkins_config = JenkinsConfig(
             user_id=data['user_id'],
             name=data['name'],
-            base_url=data['base_url'],
+            base_url=normalized_base,
             username=data['username'],
             password_secret_id=password_secret_id,
             api_token_secret_id=api_token_secret_id
@@ -1192,9 +1203,13 @@ def connect_jenkins():
             # Clean up if connection failed
             logger.error(f"Jenkins connection test failed: {connection_test.get('error')}")
             jenkins_config.delete()
+            # Add hint if user supplied a job or console URL
+            hint = ""
+            if '/job/' in raw_base_url or raw_base_url.endswith(('/console', '/consoleText')):
+                hint = " Hint: Use the Jenkins base URL (e.g., https://host[:port]/jenkins), not a specific job/console URL."
             return jsonify({
                 "success": False,
-                "error": f"Connection test failed: {connection_test.get('error')}"
+                "error": f"Connection test failed: {connection_test.get('error')}.{hint}"
             }), 400
         
         logger.info(f"Jenkins connection test successful: {connection_test}")
