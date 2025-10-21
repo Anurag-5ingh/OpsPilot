@@ -1276,7 +1276,8 @@ def fetch_console_from_url():
     Request body:
     {
         "console_url": "https://jenkins.example.com/job/MyJob/123/console",
-        "jenkins_config_id": 1
+        "jenkins_config_id": 1,
+        "user_id": "system" (optional)
     }
     
     Returns:
@@ -1292,6 +1293,7 @@ def fetch_console_from_url():
         data = request.get_json()
         console_url = data.get('console_url')
         jenkins_config_id = data.get('jenkins_config_id')
+        user_id = data.get('user_id', 'system')
         
         if not console_url:
             return jsonify({"error": "console_url is required"}), 400
@@ -1301,7 +1303,6 @@ def fetch_console_from_url():
         import re
         
         # Extract job details from URL
-        # Example: https://fe0vm05248.de.bosch.com:9005/tools/jenkins/job/Ansible%20BCN/job/ncg3kor/1204/console
         url_pattern = r'/job/([^/]+)(?:/job/([^/]+))*/([0-9]+)/console'
         match = re.search(url_pattern, console_url)
         
@@ -1322,10 +1323,21 @@ def fetch_console_from_url():
         job_name = '/'.join(job_path_parts[:-1]) if len(job_path_parts) > 1 else job_path_parts[0]
         build_number = int(match.group(3))
         
-        # Get Jenkins config if provided
+        # Resolve Jenkins config (explicit or auto-match by URL)
         jenkins_config = None
         if jenkins_config_id:
             jenkins_config = JenkinsConfig.get_by_id(jenkins_config_id)
+        else:
+            try:
+                parsed = urlparse(console_url)
+                base_candidate = f"{parsed.scheme}://{parsed.netloc}"
+                configs = JenkinsConfig.get_by_user(user_id)
+                for cfg in configs:
+                    if cfg.base_url.startswith(base_candidate) or base_candidate.startswith(cfg.base_url):
+                        jenkins_config = cfg
+                        break
+            except Exception:
+                pass
         
         if jenkins_config:
             # Use existing Jenkins service
@@ -1533,7 +1545,7 @@ def analyze_console_log():
         "console_log": "...",
         "job_name": "MyJob" (optional),
         "build_number": 123 (optional),
-        "user_id": "system" (optional)
+        "ansible_config_id": 2 (optional)
     }
     """
     try:
@@ -1541,6 +1553,7 @@ def analyze_console_log():
         console_log = data.get('console_log', '')
         job_name = data.get('job_name') or 'UnknownJob'
         build_number = int(data.get('build_number') or 0)
+        ansible_config_id = data.get('ansible_config_id')
 
         if not console_log:
             return jsonify({"success": False, "error": "console_log is required"}), 400
@@ -1550,12 +1563,19 @@ def analyze_console_log():
         # AI analysis
         ai = cicd_analyzer._ai_analyze_logs(job_name, build_number, console_log, None, quick)
 
+        # Optional Ansible context
+        ansible_service = None
+        if ansible_config_id:
+            ansible_cfg = AnsibleConfig.get_by_id(int(ansible_config_id))
+            if ansible_cfg:
+                ansible_service = AnsibleService(ansible_cfg)
+
         # Build minimal BuildLog for suggestion generation
         fake_build = BuildLog(job_name=job_name, build_number=build_number, status='FAILURE')
-        fixes = cicd_analyzer._generate_fix_suggestions(ai, fake_build, console_log, None)
+        fixes = cicd_analyzer._generate_fix_suggestions(ai, fake_build, console_log, ansible_service)
 
         analysis = {
-            'error_summary': ai.get('error_summary', 'Build failed'),
+            'error_summary': ai.get('error_summary', 'Build result review'),
             'root_cause': ai.get('root_cause', 'Unknown'),
             'confidence': ai.get('confidence_score', ai.get('confidence', 0.6)),
             'confidence_score': ai.get('confidence_score', 0.6),

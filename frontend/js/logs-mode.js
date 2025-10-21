@@ -217,9 +217,10 @@ class LogsMode {
             const response = await fetch('/cicd/jenkins/console', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+body: JSON.stringify({
                     console_url: consoleUrl,
-                    jenkins_config_id: this.currentJenkinsConfig
+                    jenkins_config_id: this.currentJenkinsConfig,
+                    user_id: 'system'
                 })
             });
             
@@ -261,7 +262,7 @@ class LogsMode {
                             <div><strong>Source:</strong> <a href="${logData.original_url}" target="_blank">View in Jenkins</a></div>
                         </div>
                         <div class="console-log">
-                            <pre id="console-output">${this.escapeHtml(logData.console_log)}</pre>
+<pre id=\"console-output\">${this.escapeHtml(logData.console_log || 'No console log returned. Ensure a Jenkins configuration is selected and accessible.')}</pre>
                         </div>
                         <div class="console-actions">
                             <button id="analyze-console-btn" class="primary-btn">
@@ -315,11 +316,11 @@ class LogsMode {
             const response = await fetch('/cicd/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+body: JSON.stringify({
                     console_log: logData.console_log,
                     job_name: logData.job_name,
                     build_number: logData.build_number,
-                    user_id: 'system'
+                    ansible_config_id: this.currentAnsibleConfig || null
                 })
             });
             
