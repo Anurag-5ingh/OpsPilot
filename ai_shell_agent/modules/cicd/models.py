@@ -485,6 +485,14 @@ class JenkinsConfig:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (without sensitive data)."""
+        # Handle datetime vs string for last_sync to avoid attribute errors
+        if isinstance(self.last_sync, str):
+            last_sync_serialized = self.last_sync
+        else:
+            try:
+                last_sync_serialized = self.last_sync.isoformat() if self.last_sync else None
+            except Exception:
+                last_sync_serialized = None
         return {
             'id': self.id,
             'user_id': self.user_id,
@@ -493,7 +501,7 @@ class JenkinsConfig:
             'username': self.username,
             'has_password': bool(self.password_secret_id),
             'has_api_token': bool(self.api_token_secret_id),
-            'last_sync': self.last_sync.isoformat() if self.last_sync else None,
+            'last_sync': last_sync_serialized,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }

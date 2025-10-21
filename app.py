@@ -1343,20 +1343,59 @@ def fetch_console_from_url():
             # Use existing Jenkins service
             jenkins_service = JenkinsService(jenkins_config)
             try:
-                # Get console log using the service
-                console_log, has_more = jenkins_service.get_console_log(
-                    job_name, build_number
-                )
+                # Build consoleText URL and fetch using the same session to inspect status
+                from urllib.parse import quote
+                encoded_job = quote(job_name)
+                url = f"{jenkins_service.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/consoleText"
+                resp = jenkins_service._session.get(url)
+                if resp.status_code == 200:
+                    console_log = resp.text
+                    has_more = False
+                elif resp.status_code in (401, 403):
+                    # Auth issues
+                    return jsonify({
+                        "success": False,
+                        "error": f"HTTP {resp.status_code}: Access denied to Jenkins console",
+                        "error_type": "AUTH_FORBIDDEN" if resp.status_code == 403 else "AUTH_REQUIRED",
+                        "suggestion": "Verify Jenkins API token and permissions in Configure > Jenkins",
+                        "job_name": job_name,
+                        "build_number": build_number
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": f"HTTP {resp.status_code}: {resp.reason}",
+                        "error_type": "HTTP_ERROR",
+                        "job_name": job_name,
+                        "build_number": build_number
+                    }), 200
             finally:
                 jenkins_service.close()
         else:
             # Direct fetch from URL (less secure but works for public Jenkins)
             import requests
-            response = requests.get(console_url.replace('/console', '/consoleText'), 
-                                  verify=False, timeout=30)
-            response.raise_for_status()
-            console_log = response.text
-            has_more = False
+            try:
+                response = requests.get(console_url.replace('/console', '/consoleText'), 
+                                      verify=False, timeout=30)
+                if response.status_code == 200:
+                    console_log = response.text
+                    has_more = False
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": f"HTTP {response.status_code}: {response.reason}",
+                        "error_type": "HTTP_ERROR",
+                        "job_name": job_name,
+                        "build_number": build_number
+                    }), 200
+            except requests.exceptions.RequestException as e:
+                return jsonify({
+                    "success": False,
+                    "error": f"Network error: {str(e)}",
+                    "error_type": "NETWORK_ERROR",
+                    "job_name": job_name,
+                    "build_number": build_number
+                }), 200
         
         return jsonify({
             "success": True,
