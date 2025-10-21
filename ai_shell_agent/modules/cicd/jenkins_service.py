@@ -134,7 +134,7 @@ class JenkinsService:
             }
         
         try:
-            url = urljoin(self.base_url, "/api/json")
+            url = f"{self.base_url.rstrip('/')}/api/json"
             logger.info(f"Making request to: {url}")
             response = self._session.get(url)
             
@@ -157,7 +157,8 @@ class JenkinsService:
                         'success': False,
                         'error': error_msg,
                         'error_type': 'INVALID_RESPONSE',
-                        'response_preview': response.text[:200] + '...' if len(response.text) > 200 else response.text
+                        'response_preview': response.text[:200] + '...' if len(response.text) > 200 else response.text,
+                        'url_tested': url
                     }
             elif response.status_code == 401:
                 error_msg = 'Authentication failed - Invalid username or password/API token'
@@ -166,7 +167,8 @@ class JenkinsService:
                     'success': False,
                     'error': error_msg,
                     'error_type': 'AUTHENTICATION_FAILED',
-                    'suggestion': 'Check your username and password. If using API token, ensure it\'s valid and not expired.'
+                    'suggestion': 'Check your username and password. If using API token, ensure it\'s valid and not expired.',
+                    'url_tested': url
                 }
             elif response.status_code == 403:
                 error_msg = 'Access denied - User lacks required permissions'
@@ -175,7 +177,8 @@ class JenkinsService:
                     'success': False,
                     'error': error_msg,
                     'error_type': 'PERMISSION_DENIED',
-                    'suggestion': 'Contact Jenkins administrator to grant API access permissions to your user.'
+                    'suggestion': 'Contact Jenkins administrator to grant API access permissions to your user.',
+                    'url_tested': url
                 }
             elif response.status_code == 404:
                 error_msg = 'Jenkins API not found - Check URL path'
@@ -207,7 +210,8 @@ class JenkinsService:
                 'error': error_msg,
                 'error_type': 'SSL_ERROR',
                 'details': ssl_details,
-                'suggestion': 'This should be fixed now, but if you still see this, the certificate may have other issues.'
+                'suggestion': 'This should be fixed now, but if you still see this, the certificate may have other issues.',
+                'url_tested': url
             }
         except requests.exceptions.ConnectionError as e:
             connection_details = str(e)
@@ -235,7 +239,7 @@ class JenkinsService:
                 'error_type': error_type,
                 'details': connection_details,
                 'suggestion': suggestion,
-                'url_tested': self.base_url
+                'url_tested': url
             }
         except requests.Timeout as e:
             error_msg = 'Request timeout - Server may be slow or unresponsive'
@@ -244,7 +248,8 @@ class JenkinsService:
                 'success': False,
                 'error': error_msg,
                 'error_type': 'TIMEOUT',
-                'suggestion': 'Try again later or check if Jenkins server is overloaded'
+                'suggestion': 'Try again later or check if Jenkins server is overloaded',
+                'url_tested': url
             }
         except Exception as e:
             error_msg = f'Unexpected error: {str(e)}'
@@ -253,7 +258,8 @@ class JenkinsService:
                 'success': False,
                 'error': error_msg,
                 'error_type': 'UNKNOWN_ERROR',
-                'details': str(e)
+                'details': str(e),
+                'url_tested': url
             }
     
     def close(self):
@@ -264,7 +270,7 @@ class JenkinsService:
     def get_jobs(self, server_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get list of Jenkins jobs, optionally filtered by server context."""
         try:
-            url = urljoin(self.base_url, "/api/json?tree=jobs[name,url,color,lastBuild[number,url]]")
+            url = f"{self.base_url.rstrip('/')}/api/json?tree=jobs[name,url,color,lastBuild[number,url]]"
             response = self._session.get(url)
             response.raise_for_status()
             
@@ -295,7 +301,7 @@ class JenkinsService:
         """Check if a job targets a specific server by examining its configuration."""
         try:
             # Get job configuration
-            url = urljoin(self.base_url, f"/job/{quote(job_name)}/config.xml")
+            url = f"{self.base_url.rstrip('/')}/job/{quote(job_name)}/config.xml"
             response = self._session.get(url)
             
             if response.status_code == 200:
@@ -329,8 +335,7 @@ class JenkinsService:
         try:
             # Encode job name for URL
             encoded_job = quote(job_name)
-            url = urljoin(self.base_url, 
-                         f"/job/{encoded_job}/api/json?tree=builds[number,url,result,duration,timestamp,id]{{,{limit}}}")
+            url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/api/json?tree=builds[number,url,result,duration,timestamp,id]{{,{limit}}}"
             
             response = self._session.get(url)
             response.raise_for_status()
@@ -362,8 +367,7 @@ class JenkinsService:
         """Get detailed information about a specific build."""
         try:
             encoded_job = quote(job_name)
-            url = urljoin(self.base_url, 
-                         f"/job/{encoded_job}/{build_number}/api/json")
+            url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/api/json"
             
             response = self._session.get(url)
             response.raise_for_status()
@@ -403,12 +407,10 @@ class JenkinsService:
             
             # Use progressive text API for better performance
             if start_offset > 0:
-                url = urljoin(self.base_url, 
-                             f"/job/{encoded_job}/{build_number}/logText/progressiveText")
+                url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/logText/progressiveText"
                 params = {'start': start_offset}
             else:
-                url = urljoin(self.base_url, 
-                             f"/job/{encoded_job}/{build_number}/consoleText")
+                url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/consoleText"
                 params = {}
             
             response = self._session.get(url, params=params)
