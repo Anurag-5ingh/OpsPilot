@@ -88,7 +88,8 @@ class JenkinsService:
                 auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
                 self._auth_header = f"Basic {auth_b64}"
                 self._session.headers.update({'Authorization': self._auth_header})
-                logger.debug("Authentication header set successfully")
+                # Do not log secrets; only log metadata
+                logger.debug(f"Authentication header set; user={self.username}, token_len={len(str(auth_credential))}")
             except Exception as e:
                 logger.error(f"Failed to setup Jenkins authentication: {e}")
         else:
@@ -138,6 +139,8 @@ class JenkinsService:
         try:
             url = f"{self.base_url.rstrip('/')}/api/json"
             logger.info(f"Making request to: {url}")
+            dbg_headers = {k: ('<redacted>' if k.lower() == 'authorization' else v) for k, v in self._session.headers.items()}
+            logger.debug(f"Session headers: {dbg_headers}")
             response = self._session.get(url)
             
             if response.status_code == 200:
@@ -273,6 +276,7 @@ class JenkinsService:
         """Get list of Jenkins jobs, optionally filtered by server context."""
         try:
             url = f"{self.base_url.rstrip('/')}/api/json?tree=jobs[name,url,color,lastBuild[number,url]]"
+            logger.debug(f"Fetching jobs from: {url}")
             response = self._session.get(url)
             response.raise_for_status()
             
@@ -303,7 +307,8 @@ class JenkinsService:
         """Check if a job targets a specific server by examining its configuration."""
         try:
             # Get job configuration
-            url = f"{self.base_url.rstrip('/')}/job/{quote(job_name)}/config.xml"
+            job_path = self._build_job_path(job_name)
+            url = f"{self.base_url.rstrip('/')}{job_path}/config.xml"
             response = self._session.get(url)
             
             if response.status_code == 200:
@@ -331,14 +336,28 @@ class JenkinsService:
             logger.debug(f"Could not check job config for {job_name}: {e}")
         
         return False
+
+    def _build_job_path(self, job_full_name: str) -> str:
+        """Construct Jenkins job path handling folders/multibranch (e.g., /job/a/job/b)."""
+        try:
+            parts = [p for p in (job_full_name or '').split('/') if p]
+            if not parts:
+                return ''
+            encoded_parts = [quote(p) for p in parts]
+            return "/job/" + "/job/".join(encoded_parts)
+        except Exception:
+            # Fallback to legacy encoding of whole name
+            return f"/job/{quote(job_full_name)}"
     
     def get_job_builds(self, job_name: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent builds for a specific job."""
         try:
-            # Encode job name for URL
-            encoded_job = quote(job_name)
-            url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/api/json?tree=builds[number,url,result,duration,timestamp,id]{{,{limit}}}"
+            # Build correct Jenkins job path (handles folders)
+            job_path = self._build_job_path(job_name)
+            tree_param = f"builds[number,url,result,duration,timestamp,id]{{,{limit}}}"
+            url = f"{self.base_url.rstrip('/')}{job_path}/api/json?tree={tree_param}"
             
+            logger.debug(f"Fetching builds for job '{job_name}' from: {url}")
             response = self._session.get(url)
             response.raise_for_status()
             
@@ -368,9 +387,10 @@ class JenkinsService:
     def get_build_details(self, job_name: str, build_number: int) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific build."""
         try:
-            encoded_job = quote(job_name)
-            url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/api/json"
+            job_path = self._build_job_path(job_name)
+            url = f"{self.base_url.rstrip('/')}{job_path}/{build_number}/api/json"
             
+            logger.debug(f"Fetching build details: {url}")
             response = self._session.get(url)
             response.raise_for_status()
             
@@ -405,16 +425,17 @@ class JenkinsService:
             Tuple of (log_text, has_more_data)
         """
         try:
-            encoded_job = quote(job_name)
+            job_path = self._build_job_path(job_name)
             
             # Use progressive text API for better performance
             if start_offset > 0:
-                url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/logText/progressiveText"
+                url = f"{self.base_url.rstrip('/')}{job_path}/{build_number}/logText/progressiveText"
                 params = {'start': start_offset}
             else:
-                url = f"{self.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/consoleText"
+                url = f"{self.base_url.rstrip('/')}{job_path}/{build_number}/consoleText"
                 params = {}
             
+            logger.debug(f"Fetching console log from: {url} params={params}")
             response = self._session.get(url, params=params)
             response.raise_for_status()
             

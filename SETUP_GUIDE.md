@@ -49,14 +49,18 @@ APP_SECRET=your-secret-key-for-flask-sessions
 
 #### Web Interface:
 ```bash
-cd opsPilot
+# From project root
 python app.py
 ```
-Then visit: http://localhost:8080
+Then visit: http://localhost:8080/opspilot
 
-#### CLI Interface:
+#### Syntax check (optional but recommended):
 ```bash
-cd opsPilot
+python -m compileall -q .
+```
+
+#### CLI Interface (if present):
+```bash
 python main.py
 ```
 

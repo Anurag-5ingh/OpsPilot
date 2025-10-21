@@ -1318,8 +1318,8 @@ def fetch_console_from_url():
             part = url_parts[i].split('/')[0]
             job_path_parts.append(unquote(part))
         
-        # Last part before build number is the final job name
-        job_name = '/'.join(job_path_parts[:-1]) if len(job_path_parts) > 1 else job_path_parts[0]
+        # Full job path is all parts joined with '/'
+        job_name = '/'.join(job_path_parts)
         build_number = int(match.group(3))
         
         # Get Jenkins config if provided
@@ -1683,6 +1683,51 @@ def get_build_history():
     except Exception as e:
         logger.error(f"Failed to get build history: {e}")
         return jsonify({"error": "Failed to retrieve build history"}), 500
+
+@app.route("/cicd/jenkins/configs/<int:config_id>", methods=["DELETE"])
+def delete_jenkins_config(config_id: int):
+    """Delete a Jenkins configuration and its stored secrets."""
+    try:
+        config = JenkinsConfig.get_by_id(config_id)
+        if not config:
+            return jsonify({"error": "Jenkins configuration not found"}), 404
+
+        # Delete associated secrets (best-effort)
+        try:
+            from ai_shell_agent.modules.ssh.secrets import delete_secret
+            if getattr(config, "password_secret_id", None):
+                delete_secret(config.password_secret_id)
+            if getattr(config, "api_token_secret_id", None):
+                delete_secret(config.api_token_secret_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete Jenkins secrets for config {config_id}: {e}")
+
+        # Delete the config row
+        if config.delete():
+            return jsonify({"success": True, "message": "Jenkins configuration deleted"}), 200
+        else:
+            return jsonify({"error": "Failed to delete Jenkins configuration"}), 500
+    except Exception as e:
+        logger.error(f"Error deleting Jenkins config {config_id}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/cicd/ansible/configs/<int:config_id>", methods=["DELETE"])
+def delete_ansible_config(config_id: int):
+    """Delete an Ansible configuration."""
+    try:
+        config = AnsibleConfig.get_by_id(config_id)
+        if not config:
+            return jsonify({"error": "Ansible configuration not found"}), 404
+
+        if config.delete():
+            return jsonify({"success": True, "message": "Ansible configuration deleted"}), 200
+        else:
+            return jsonify({"error": "Failed to delete Ansible configuration"}), 500
+    except Exception as e:
+        logger.error(f"Error deleting Ansible config {config_id}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
 
 # ===========================
 # WebSocket Terminal Support
