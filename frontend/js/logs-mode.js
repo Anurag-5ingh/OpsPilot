@@ -18,16 +18,6 @@ class LogsMode {
     }
     
     initializeUI() {
-        // Add logs mode UI elements if not already present
-        const modesContainer = document.querySelector('.mode-toggle');
-        if (modesContainer && !document.getElementById('mode-logs')) {
-            const logsBtn = document.createElement('button');
-            logsBtn.id = 'mode-logs';
-            logsBtn.className = 'mode-btn';
-            logsBtn.textContent = 'Logs';
-            logsBtn.addEventListener('click', () => window.toggleMode('logs'));
-            modesContainer.appendChild(logsBtn);
-        }
         
         // Create logs input container if it doesn't exist
         let logsContainer = document.getElementById('logs-input-container');

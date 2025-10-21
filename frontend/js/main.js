@@ -116,6 +116,7 @@ function setupTerminalControlListeners() {
 function setupModeToggleListeners() {
   const modeCommandBtn = document.getElementById("mode-command");
   const modeTroubleshootBtn = document.getElementById("mode-troubleshoot");
+  const modeLogsBtn = document.getElementById("mode-logs");
   
   if (modeCommandBtn) {
     modeCommandBtn.addEventListener("click", () => toggleMode("command"));
@@ -123,5 +124,9 @@ function setupModeToggleListeners() {
   
   if (modeTroubleshootBtn) {
     modeTroubleshootBtn.addEventListener("click", () => toggleMode("troubleshoot"));
+  }
+  
+  if (modeLogsBtn) {
+    modeLogsBtn.addEventListener("click", () => toggleMode("logs"));
   }
 }
