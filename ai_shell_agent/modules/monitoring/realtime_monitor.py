@@ -120,9 +120,11 @@ class SystemMetricCollector:
             for disk in psutil.disk_partitions():
                 try:
                     usage = psutil.disk_usage(disk.mountpoint)
+                    # Avoid backslash in f-string expressions; pre-sanitize mountpoint
+                    _mp = disk.mountpoint.replace('/', '_').replace('\\', '_')
                     metrics.append(SystemMetric(
                         metric_type=MonitoringMetricType.DISK_USAGE,
-                        name=f"disk_usage_{disk.mountpoint.replace('/', '_').replace('\\\\', '_')}",
+                        name=f"disk_usage_{_mp}",
                         value=usage.percent,
                         unit="percent",
                         timestamp=timestamp,

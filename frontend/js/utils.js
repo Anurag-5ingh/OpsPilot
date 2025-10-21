@@ -37,7 +37,7 @@ function setButtonLoading(button, loading) {
 }
 
 /**
- * Append message to chat container
+ * Append message to chat container (command mode only)
  */
 function appendMessage(text, role) {
   const container = document.getElementById("chat-container");
@@ -72,6 +72,12 @@ function toggleMode(mode) {
     if (container) container.classList.add("hidden");
   });
   
+  // Hide chat stream in non-command modes
+  const chatStream = document.getElementById("chat-container");
+  if (chatStream) {
+    chatStream.classList.toggle('hidden', mode !== 'command');
+  }
+
   // Show the selected mode
   if (mode === "command" && commandBtn && commandContainer) {
     commandBtn.classList.add("active");
@@ -89,6 +95,9 @@ function toggleMode(mode) {
     const serverInput = document.getElementById("server-name-input");
     if (serverInput) serverInput.focus();
   }
+
+  // Dispatch a custom event so modules can react to mode changes
+  document.dispatchEvent(new CustomEvent('mode:changed', { detail: { mode } }));
 }
 
 /**
@@ -186,6 +195,21 @@ function updateSystemAwarenessUI() {
   }
 }
 
+/**
+ * Toast notifications
+ */
+function showToast(message, type = 'info', duration = 3500) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  // Clear previous toasts if error to keep latest only
+  if (type === 'error') container.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
 // Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { 
@@ -196,6 +220,7 @@ if (typeof module !== 'undefined' && module.exports) {
     profileServer, 
     showSystemSummary, 
     getCommandSuggestions,
-    updateSystemAwarenessUI
+    updateSystemAwarenessUI,
+    showToast
   };
 }

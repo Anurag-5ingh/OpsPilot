@@ -358,14 +358,14 @@ async function handleProfileSave(e) {
     const result = await response.json();
     
     if (response.ok) {
-      appendMessage(`✅ Profile "${formData.name}" saved successfully!`, 'system');
+      showToast(`Profile "${formData.name}" saved`, 'success');
       hideProfileForm();
       loadProfiles();
     } else {
-      showError(result.error || 'Failed to save profile');
+      showToast(result.error || 'Failed to save profile', 'error');
     }
   } catch (error) {
-    showError('Error saving profile: ' + error.message);
+    showToast('Error saving profile: ' + error.message, 'error');
   } finally {
     setButtonLoading(saveBtn, false);
   }
@@ -532,12 +532,12 @@ async function testProfileConnection(profileId) {
     const result = await response.json();
     
     if (result.success) {
-      appendMessage(`✅ Connection test successful for "${profile.name}"`, 'system');
+      showToast(`Connection test successful for "${profile.name}"`, 'success');
     } else {
-      appendMessage(`❌ Connection test failed for "${profile.name}": ${result.details || result.error}`, 'error');
+      showToast(`Connection test failed for "${profile.name}": ${result.details || result.error}`, 'error');
     }
   } catch (error) {
-    appendMessage(`Connection test error for "${profile.name}": ${error.message}`, 'error');
+    showToast(`Connection test error for "${profile.name}": ${error.message}`, 'error');
   }
 }
 
@@ -645,7 +645,7 @@ function initializeTerminalWithProfile(profileId) {
   // Override the socket connection to use profile
   if (state.socket) {
     state.socket.on("connect", () => {
-      appendMessage("🔄 Connecting with profile...", "system");
+  showToast("Connecting with profile...", "info");
       state.socket.emit("start_ssh", {
         profileId: profileId
       });

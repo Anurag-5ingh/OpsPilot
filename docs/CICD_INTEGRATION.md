@@ -50,8 +50,10 @@ The CI/CD integration connects OpsPilot with Jenkins and Ansible to:
 - Cleans up old build data
 
 #### 4. API Endpoints
-- `POST /cicd/jenkins/connect` - Configure Jenkins connection
+- `POST /cicd/jenkins/connect` - Configure Jenkins connection (API token required; password optional)
+- `DELETE /cicd/jenkins/configs/{id}` - Delete a saved Jenkins configuration (and associated secrets)
 - `POST /cicd/ansible/connect` - Configure Ansible setup
+- `DELETE /cicd/ansible/configs/{id}` - Delete a saved Ansible configuration
 - `GET /cicd/builds` - Fetch builds for a server
 - `GET /cicd/builds/{id}/logs` - Get console logs
 - `POST /cicd/builds/{id}/analyze` - Analyze failed build
@@ -101,10 +103,10 @@ The CI/CD integration connects OpsPilot with Jenkins and Ansible to:
 ## Security Features
 
 ### Credential Management
-- API tokens stored using existing SSH secrets infrastructure
-- AES256 encryption for sensitive data
-- No plain-text passwords in database
-- Secure storage with keyring integration
+- API tokens stored using existing secrets infrastructure (preferred)
+- Passwords can be stored optionally (used only if no token); both stored securely via keyring/encrypted fallback
+- AES256-at-rest for file fallback; no plain-text secrets in DB
+- Secure storage with OS keyring integration
 
 ### Command Execution Safety
 - **ALL commands require explicit user confirmation**
@@ -115,7 +117,7 @@ The CI/CD integration connects OpsPilot with Jenkins and Ansible to:
 
 ### Access Control
 - User-scoped configurations (no cross-user access)
-- Read-only Jenkins API tokens preferred
+- Read-only Jenkins API tokens preferred (password optional fallback)
 - Log sanitization to prevent secret leakage
 
 ## Configuration Examples
@@ -126,9 +128,12 @@ The CI/CD integration connects OpsPilot with Jenkins and Ansible to:
   "name": "Production Jenkins",
   "base_url": "https://jenkins.example.com",
   "username": "opspilot",
-  "api_token": "11abc123def456..."
+  "api_token": "11abc123def456...",
+  "password": "optional-if-required-by-your-instance"
 }
 ```
+
+Note: Jenkins folders/multibranch jobs are fully supported; use job names like "Folder1/Folder2/MyJob".
 
 ### Ansible Setup
 ```json
