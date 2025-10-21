@@ -237,7 +237,16 @@ body: JSON.stringify({
                 
                 window.appendMessage(`Successfully fetched console for ${data.job_name} #${data.build_number}`, 'system');
             } else {
-                window.appendMessage(`Failed to fetch console: ${data.error}`, 'system');
+                const reason = data.error_type ? `${data.error} (type: ${data.error_type})` : (data.error || 'Unknown error');
+                const suggestion = data.suggestion ? `\nSuggestion: ${data.suggestion}` : '';
+                window.appendMessage(`Failed to fetch console: ${reason}${suggestion}`, 'system');
+                // Show modal with error details so user understands next steps
+                this.showConsoleLogModal({
+                    job_name: data.job_name || 'Unknown',
+                    build_number: data.build_number || '?',
+                    console_log: `Failed to fetch console log.\nReason: ${reason}${suggestion}\n\nEnsure a Jenkins configuration with valid API token is selected.`,
+                    original_url: consoleUrl
+                });
             }
             
         } catch (error) {
@@ -299,9 +308,15 @@ body: JSON.stringify({
             if (e.target === modal) closeModal();
         };
         
-        analyzeBtn.onclick = async () => {
-            await this.analyzeConsoleLog(logData, analyzeBtn);
-        };
+        // Disable analyze if we have no console content
+        if (!logData.console_log || !logData.console_log.trim()) {
+            analyzeBtn.disabled = true;
+            analyzeBtn.title = 'No console log available to analyze';
+        } else {
+            analyzeBtn.onclick = async () => {
+                await this.analyzeConsoleLog(logData, analyzeBtn);
+            };
+        }
     }
     
     async analyzeConsoleLog(logData, analyzeBtn) {
