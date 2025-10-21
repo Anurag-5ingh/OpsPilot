@@ -75,6 +75,58 @@
             <span class="spinner hidden"></span>
           </button>
         </div>
+        
+        <!-- Logs Mode Input (hidden by default) -->
+        <div id="logs-input-container" class="chat-input-container hidden">
+          <div class="logs-header">
+            <div class="config-section">
+              <div class="config-row">
+                <div class="config-item">
+                  <label for="jenkins-config-select">Jenkins:</label>
+                  <select id="jenkins-config-select">
+                    <option value="">No Jenkins configured</option>
+                  </select>
+                  <button id="config-jenkins-btn" class="config-btn">Configure</button>
+                </div>
+                <div class="config-item">
+                  <label for="ansible-config-select">Ansible:</label>
+                  <select id="ansible-config-select">
+                    <option value="">No Ansible configured</option>
+                  </select>
+                  <button id="config-ansible-btn" class="config-btn">Configure</button>
+                </div>
+              </div>
+              <div class="config-row">
+                <div class="config-item">
+                  <label for="server-name-input">Server Name:</label>
+                  <input type="text" id="server-name-input" placeholder="e.g., web-server-01" />
+                </div>
+                <button id="fetch-builds-btn" class="primary-btn">
+                  <span class="btn-text">Fetch Builds</span>
+                  <span class="spinner hidden"></span>
+                </button>
+              </div>
+              <div class="config-row console-url-section">
+                <div class="config-item console-url-item">
+                  <label for="console-url-input">Or paste Console URL:</label>
+                  <input type="url" id="console-url-input" placeholder="https://jenkins.example.com/job/MyJob/123/console" />
+                  <small class="form-help">Direct link to specific Jenkins job console</small>
+                </div>
+                <button id="fetch-console-btn" class="primary-btn">
+                  <span class="btn-text">Analyze Console</span>
+                  <span class="spinner hidden"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="logs-content">
+            <div class="builds-list" id="builds-list">
+              <div class="no-builds-message" id="no-builds-message">
+                Configure Jenkins and fetch builds to get started
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Right Panel: Terminal -->
