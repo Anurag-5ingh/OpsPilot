@@ -7,6 +7,7 @@
 
 class LogsMode {
     constructor() {
+        console.log('[LogsMode] constructor: initializing');
         this.currentJenkinsConfig = null;
         this.currentAnsibleConfig = null;
         this.currentBuilds = [];
@@ -18,11 +19,17 @@ class LogsMode {
     }
     
     initializeUI() {
+        console.log('[LogsMode] initializeUI: setting up listeners');
         // Logs container is now in HTML, just set up event listeners
         // Use a longer delay to ensure all DOM elements are ready
-        setTimeout(() => {
-            this.setupEventListeners();
-        }, 500);
+        this.setupEventListeners();
+        // Re-bind when mode changes
+        document.addEventListener('mode:changed', (e) => {
+            if (e.detail && e.detail.mode === 'logs') {
+                console.log('[LogsMode] mode:changed -> logs, rebinding listeners');
+                this.setupEventListeners();
+            }
+        });
     }
     
     getLogsUIHTML() {
@@ -80,29 +87,9 @@ class LogsMode {
     }
     
     setupEventListeners() {
-        // Configuration buttons
-        const configJenkinsBtn = document.getElementById('config-jenkins-btn');
-        if (configJenkinsBtn) {
-            configJenkinsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                console.log('Jenkins configure button clicked');
-                this.showJenkinsConfigModal();
-            });
-            console.log('Jenkins config button event listener added');
-        } else {
-            console.warn('Jenkins config button not found');
-        }
-        
-        const configAnsibleBtn = document.getElementById('config-ansible-btn');
-        if (configAnsibleBtn) {
-            configAnsibleBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                console.log('Ansible configure button clicked');
-                this.showAnsibleConfigModal();
-            });
-        } else {
-            console.warn('Ansible config button not found');
-        }
+        console.log('[LogsMode] setupEventListeners: binding handlers');
+        // Note: Configure buttons are wired via inline onclick in index.html (openJenkinsConfigModal/openAnsibleConfigModal)
+        // Avoid attaching duplicate handlers here to prevent multiple modals.
         
         // Fetch console button
         const fetchConsoleBtn = document.getElementById('fetch-console-btn');
@@ -166,6 +153,39 @@ class LogsMode {
             select.appendChild(option);
         });
         
+        // Add delete button next to selector if not present
+        let delBtn = document.getElementById('delete-jenkins-config-btn');
+        if (!delBtn) {
+            delBtn = document.createElement('button');
+            delBtn.id = 'delete-jenkins-config-btn';
+            delBtn.className = 'config-btn danger';
+            delBtn.textContent = 'Delete';
+            const parent = select.parentElement;
+            parent && parent.appendChild(delBtn);
+            delBtn.addEventListener('click', async () => {
+                const id = select.value;
+                if (!id) return;
+                if (!confirm('Delete selected Jenkins configuration?')) return;
+                try {
+                    const resp = await fetch(`/cicd/jenkins/configs/${id}`, { method: 'DELETE' });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        window.appendMessage('Jenkins configuration deleted', 'system');
+                        this.loadConfigurations();
+                    } else {
+                        window.appendMessage(data.error || 'Failed to delete Jenkins configuration', 'system');
+                    }
+                } catch (e) {
+                    window.appendMessage('Error deleting Jenkins configuration: ' + e.message, 'system');
+                }
+            });
+        }
+        delBtn.disabled = !select.value;
+        select.addEventListener('change', () => {
+            const btn = document.getElementById('delete-jenkins-config-btn');
+            if (btn) btn.disabled = !select.value;
+        });
+        
         if (configs.length === 1) {
             select.value = configs[0].id;
             this.currentJenkinsConfig = configs[0].id;
@@ -186,6 +206,39 @@ class LogsMode {
             select.appendChild(option);
         });
         
+        // Add delete button next to selector if not present
+        let delBtn = document.getElementById('delete-ansible-config-btn');
+        if (!delBtn) {
+            delBtn = document.createElement('button');
+            delBtn.id = 'delete-ansible-config-btn';
+            delBtn.className = 'config-btn danger';
+            delBtn.textContent = 'Delete';
+            const parent = select.parentElement;
+            parent && parent.appendChild(delBtn);
+            delBtn.addEventListener('click', async () => {
+                const id = select.value;
+                if (!id) return;
+                if (!confirm('Delete selected Ansible configuration?')) return;
+                try {
+                    const resp = await fetch(`/cicd/ansible/configs/${id}`, { method: 'DELETE' });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        window.appendMessage('Ansible configuration deleted', 'system');
+                        this.loadConfigurations();
+                    } else {
+                        window.appendMessage(data.error || 'Failed to delete Ansible configuration', 'system');
+                    }
+                } catch (e) {
+                    window.appendMessage('Error deleting Ansible configuration: ' + e.message, 'system');
+                }
+            });
+        }
+        delBtn.disabled = !select.value;
+        select.addEventListener('change', () => {
+            const btn = document.getElementById('delete-ansible-config-btn');
+            if (btn) btn.disabled = !select.value;
+        });
+        
         if (configs.length === 1) {
             select.value = configs[0].id;
             this.currentAnsibleConfig = configs[0].id;
@@ -200,18 +253,18 @@ class LogsMode {
         const consoleUrl = consoleUrlInput ? consoleUrlInput.value.trim() : '';
         
         if (!consoleUrl) {
-            window.appendMessage('Please enter a Jenkins console URL', 'system');
+            showToast('Please enter a Jenkins console URL', 'error');
             return;
         }
         
         // Basic URL validation
         if (!consoleUrl.includes('/console')) {
-            window.appendMessage('URL should end with /console (e.g., /job/MyJob/123/console)', 'system');
+            showToast('URL should end with /console (e.g., /job/MyJob/123/console)', 'error');
             return;
         }
         
         window.setButtonLoading(fetchBtn, true);
-        window.appendMessage(`Fetching console logs from: ${consoleUrl}`, 'system');
+        showToast(`Fetching console logs...`, 'info');
         
         try {
             const response = await fetch('/cicd/jenkins/console', {
@@ -234,13 +287,13 @@ class LogsMode {
                     original_url: consoleUrl
                 });
                 
-                window.appendMessage(`Successfully fetched console for ${data.job_name} #${data.build_number}`, 'system');
+                showToast(`Fetched console for ${data.job_name} #${data.build_number}`, 'success');
             } else {
-                window.appendMessage(`Failed to fetch console: ${data.error}`, 'system');
+                showToast(`Failed to fetch console: ${data.error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error fetching console: ${error.message}`, 'system');
+            showToast(`Error fetching console: ${error.message}`, 'error');
         } finally {
             window.setButtonLoading(fetchBtn, false);
         }
@@ -390,7 +443,6 @@ class LogsMode {
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
-    }
     }
     
     displayBuilds(builds) {
@@ -544,7 +596,7 @@ class LogsMode {
     async analyzeAndFix(buildId) {
         if (!this.currentJenkinsConfig) return;
         
-        window.appendMessage('Analyzing build failure...', 'system');
+        showToast('Analyzing build failure...', 'info');
         
         try {
             const response = await fetch(`/cicd/builds/${buildId}/analyze`, {
@@ -562,11 +614,11 @@ class LogsMode {
                 this.currentAnalysis = analysis;
                 this.displayAnalysisResults(analysis);
             } else {
-                window.appendMessage(`Analysis failed: ${analysis.error}`, 'system');
+                showToast(`Analysis failed: ${analysis.error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error analyzing build: ${error.message}`, 'system');
+            showToast(`Error analyzing build: ${error.message}`, 'error');
         }
     }
     
@@ -634,11 +686,11 @@ class LogsMode {
     
     async executeFix(analysis, buttonContainer) {
         if (!analysis.suggested_commands || analysis.suggested_commands.length === 0) {
-            window.appendMessage('No fix commands to execute', 'system');
+            showToast('No fix commands to execute', 'error');
             return;
         }
         
-        window.appendMessage('Executing fix commands...', 'system');
+        showToast('Executing fix commands...', 'info');
         buttonContainer.remove();
         
         try {
@@ -670,21 +722,22 @@ class LogsMode {
                 });
                 
                 const summaryMsg = data.all_success 
-                    ? '✅ All fix commands executed successfully!' 
-                    : '⚠️ Some commands failed. Check the results above.';
-                window.appendMessage(summaryMsg, 'system');
+                    ? 'All fix commands executed successfully' 
+                    : 'Some commands failed. Check results.';
+                showToast(summaryMsg, data.all_success ? 'success' : 'error');
             } else {
-                window.appendMessage(`Fix execution failed: ${data.error}`, 'system');
+                showToast(`Fix execution failed: ${data.error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error executing fix: ${error.message}`, 'system');
+            showToast(`Error executing fix: ${error.message}`, 'error');
         }
         
         document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
     }
     
     showJenkinsConfigModal() {
+        console.log('[LogsMode] showJenkinsConfigModal: injecting modal HTML');
         // Create modal HTML
         const modalHTML = `
             <div class="modal-overlay" id="jenkins-config-modal">
@@ -738,6 +791,7 @@ class LogsMode {
         const saveBtn = document.getElementById('jenkins-config-save');
         
         const closeModal = () => {
+            console.log('[LogsMode] Jenkins modal closeModal called');
             modal.remove();
         };
         
@@ -748,6 +802,7 @@ class LogsMode {
         };
         
         saveBtn.onclick = async () => {
+            console.log('[LogsMode] Jenkins modal: Save clicked');
             const name = document.getElementById('jenkins-name').value.trim();
             const baseUrl = document.getElementById('jenkins-url').value.trim();
             const username = document.getElementById('jenkins-username').value.trim();
@@ -759,15 +814,36 @@ class LogsMode {
                 return;
             }
             
-            window.setButtonLoading(saveBtn, true);
+            // Use global setButtonLoading function if available
+            if (typeof setButtonLoading === 'function') {
+                setButtonLoading(saveBtn, true);
+            } else if (typeof window.setButtonLoading === 'function') {
+                window.setButtonLoading(saveBtn, true);
+            } else {
+                saveBtn.disabled = true;
+            }
             
             try {
+                console.log('[LogsMode] Jenkins save payload (redacted):', { name, baseUrl, username, apiToken: !!apiToken, password: !!password });
+                if (typeof showToast === 'function') showToast('Saving Jenkins configuration…', 'info');
                 await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
                 closeModal();
             } catch (error) {
                 console.error('Error saving Jenkins config:', error);
+                if (typeof showToast === 'function') {
+                    showToast(`Error: ${error.message}`, 'error');
+                } else {
+                    alert(`Error: ${error.message}`);
+                }
             } finally {
-                window.setButtonLoading(saveBtn, false);
+                // Reset button state
+                if (typeof setButtonLoading === 'function') {
+                    setButtonLoading(saveBtn, false);
+                } else if (typeof window.setButtonLoading === 'function') {
+                    window.setButtonLoading(saveBtn, false);
+                } else {
+                    saveBtn.disabled = false;
+                }
             }
         };
         
@@ -778,6 +854,7 @@ class LogsMode {
     }
     
     showAnsibleConfigModal() {
+        console.log('[LogsMode] showAnsibleConfigModal: injecting modal HTML');
         // Create modal HTML
         const modalHTML = `
             <div class="modal-overlay" id="ansible-config-modal">
@@ -828,6 +905,7 @@ class LogsMode {
         const saveBtn = document.getElementById('ansible-config-save');
         
         const closeModal = () => {
+            console.log('[LogsMode] Ansible modal closeModal called');
             modal.remove();
         };
         
@@ -838,6 +916,7 @@ class LogsMode {
         };
         
         saveBtn.onclick = async () => {
+            console.log('[LogsMode] Ansible modal: Save clicked');
             const name = document.getElementById('ansible-name').value.trim();
             const localPath = document.getElementById('ansible-path').value.trim();
             const gitRepo = document.getElementById('ansible-repo').value.trim();
@@ -848,15 +927,36 @@ class LogsMode {
                 return;
             }
             
-            window.setButtonLoading(saveBtn, true);
+            // Use global setButtonLoading function if available
+            if (typeof setButtonLoading === 'function') {
+                setButtonLoading(saveBtn, true);
+            } else if (typeof window.setButtonLoading === 'function') {
+                window.setButtonLoading(saveBtn, true);
+            } else {
+                saveBtn.disabled = true;
+            }
             
             try {
+                console.log('[LogsMode] Ansible save payload:', { name, localPath, gitRepo, branch });
+                if (typeof showToast === 'function') showToast('Saving Ansible configuration…', 'info');
                 await this.saveAnsibleConfig(name, localPath, gitRepo, branch);
                 closeModal();
             } catch (error) {
                 console.error('Error saving Ansible config:', error);
+                if (typeof showToast === 'function') {
+                    showToast(`Error: ${error.message}`, 'error');
+                } else {
+                    alert(`Error: ${error.message}`);
+                }
             } finally {
-                window.setButtonLoading(saveBtn, false);
+                // Reset button state
+                if (typeof setButtonLoading === 'function') {
+                    setButtonLoading(saveBtn, false);
+                } else if (typeof window.setButtonLoading === 'function') {
+                    window.setButtonLoading(saveBtn, false);
+                } else {
+                    saveBtn.disabled = false;
+                }
             }
         };
         
@@ -887,17 +987,19 @@ class LogsMode {
                 body: JSON.stringify(requestBody)
             });
             
+            console.log('[LogsMode] Jenkins save response:', response.status, response.statusText);
             const data = await response.json();
+            console.log('[LogsMode] Jenkins save response body:', data);
             
             if (data.success) {
-                window.appendMessage(`Jenkins configuration '${name}' saved successfully`, 'system');
+                showToast(`Jenkins configuration '${name}' saved`, 'success');
                 await this.loadConfigurations(); // Reload configs
             } else {
-                window.appendMessage(`Failed to save Jenkins config: ${data.error}`, 'system');
+                showToast(`Failed to save Jenkins config: ${data.error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error saving Jenkins config: ${error.message}`, 'system');
+            showToast(`Error saving Jenkins config: ${error.message}`, 'error');
         }
     }
     
@@ -921,27 +1023,82 @@ class LogsMode {
                 body: JSON.stringify(requestBody)
             });
             
+            console.log('[LogsMode] Ansible save response:', response.status, response.statusText);
             const data = await response.json();
+            console.log('[LogsMode] Ansible save response body:', data);
             
             if (data.success) {
-                window.appendMessage(`Ansible configuration '${name}' saved successfully`, 'system');
+                showToast(`Ansible configuration '${name}' saved`, 'success');
                 await this.loadConfigurations(); // Reload configs
             } else {
-                window.appendMessage(`Failed to save Ansible config: ${data.error}`, 'system');
+                showToast(`Failed to save Ansible config: ${data.error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error saving Ansible config: ${error.message}`, 'system');
+            showToast(`Error saving Ansible config: ${error.message}`, 'error');
         }
     }
 }
 
+// Global helpers to force-open config modals (works even if instance not yet bound)
+window.openJenkinsConfigModal = function() {
+    console.log('[LogsMode] openJenkinsConfigModal() invoked');
+    if (typeof showToast === 'function') showToast('Opening Jenkins configuration…', 'info');
+    try {
+        if (window.logsMode && typeof window.logsMode.showJenkinsConfigModal === 'function') {
+            window.logsMode.showJenkinsConfigModal();
+        } else {
+            console.log('[LogsMode] No instance yet, creating temp LogsMode for Jenkins modal');
+            const tmp = new LogsMode();
+            tmp.showJenkinsConfigModal();
+        }
+    } catch (e) {
+        console.error('Failed to open Jenkins config modal:', e);
+    }
+};
+
+window.openAnsibleConfigModal = function() {
+    console.log('[LogsMode] openAnsibleConfigModal() invoked');
+    if (typeof showToast === 'function') showToast('Opening Ansible configuration…', 'info');
+    try {
+        if (window.logsMode && typeof window.logsMode.showAnsibleConfigModal === 'function') {
+            window.logsMode.showAnsibleConfigModal();
+        } else {
+            console.log('[LogsMode] No instance yet, creating temp LogsMode for Ansible modal');
+            const tmp = new LogsMode();
+            tmp.showAnsibleConfigModal();
+        }
+    } catch (e) {
+        console.error('Failed to open Ansible config modal:', e);
+    }
+};
+
+// Global ESC handler for modal cleanup
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const topModal = document.querySelector('.modal-overlay:last-of-type');
+        if (topModal) {
+            console.log('[LogsMode] ESC pressed - closing top modal');
+            topModal.remove();
+        }
+        // Also handle build logs modal (non-overlay)
+        const buildLogs = document.getElementById('build-logs-modal');
+        if (buildLogs && !buildLogs.classList.contains('hidden')) {
+            console.log('[LogsMode] ESC pressed - closing build logs modal');
+            buildLogs.classList.add('hidden');
+        }
+    }
+}, true);
+
 // Initialize logs mode when DOM is loaded
 let logsMode = null;
+
+window.logsMode = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize logs mode after a short delay to ensure other components are ready
     setTimeout(() => {
         logsMode = new LogsMode();
+        window.logsMode = logsMode;
     }, 100);
 });
