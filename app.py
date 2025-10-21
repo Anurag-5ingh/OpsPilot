@@ -1523,6 +1523,54 @@ def analyze_build_failure():
             "error": "Failed to analyze build failure"
         }), 500
 
+@app.route("/cicd/analyze", methods=["POST"])
+def analyze_console_log():
+    """
+    Analyze raw Jenkins console log and return structured analysis and suggestions.
+
+    Request body:
+    {
+        "console_log": "...",
+        "job_name": "MyJob" (optional),
+        "build_number": 123 (optional),
+        "user_id": "system" (optional)
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        console_log = data.get('console_log', '')
+        job_name = data.get('job_name') or 'UnknownJob'
+        build_number = int(data.get('build_number') or 0)
+
+        if not console_log:
+            return jsonify({"success": False, "error": "console_log is required"}), 400
+
+        # Quick pattern analysis
+        quick = cicd_analyzer._quick_error_analysis(console_log)
+        # AI analysis
+        ai = cicd_analyzer._ai_analyze_logs(job_name, build_number, console_log, None, quick)
+
+        # Build minimal BuildLog for suggestion generation
+        fake_build = BuildLog(job_name=job_name, build_number=build_number, status='FAILURE')
+        fixes = cicd_analyzer._generate_fix_suggestions(ai, fake_build, console_log, None)
+
+        analysis = {
+            'error_summary': ai.get('error_summary', 'Build failed'),
+            'root_cause': ai.get('root_cause', 'Unknown'),
+            'confidence': ai.get('confidence_score', ai.get('confidence', 0.6)),
+            'confidence_score': ai.get('confidence_score', 0.6),
+            'priority': ai.get('priority', 'medium'),
+            'suggested_commands': fixes.get('commands', []),
+            'suggested_playbook': fixes.get('playbook')
+        }
+
+        return jsonify({"success": True, "analysis": analysis}), 200
+
+    except Exception as e:
+        logger.error(f"Failed to analyze console log: {e}")
+        return jsonify({"success": False, "error": "Failed to analyze console log"}), 500
+
+
 @app.route("/cicd/fix/execute", methods=["POST"])
 def execute_fix_commands():
     """
