@@ -57,10 +57,17 @@ Before you start, make sure you have:
    - **Configuration Name**: A friendly name like "Production Jenkins"
    - **Jenkins URL**: Your Jenkins server URL
    - **Username**: Your Jenkins username  
-   - **API Token**: The token you just created
+   - **API Token**: The token you just created (required)
+   - **Password**: Optional; only if your Jenkins requires it
 
 4. OpsPilot will test the connection automatically
 5. If successful, you'll see a confirmation message
+
+### Notes
+- Nested/foldered job names are supported (e.g., `Folder/Team/Job`).
+- You can delete saved Jenkins/Ansible configs from the Logs mode via the Delete button, or via:
+  - `DELETE /cicd/jenkins/configs/{id}`
+  - `DELETE /cicd/ansible/configs/{id}`
 
 ### Common Jenkins Setup Issues
 

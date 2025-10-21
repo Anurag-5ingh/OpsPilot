@@ -46,7 +46,7 @@
   <div id="main-screen" class="screen hidden">
     <div class="split-container">
       <!-- Left Panel: AI Chat -->
-      <div class="left-panel">
+      <div class="left-panel expanded">
         <div class="chat-header">
           <img src="assets/brain.svg" alt="Brain Logo" class="brain-logo" />
           <span class="logo-text">opsPilot AI</span>
@@ -54,6 +54,9 @@
             <button id="mode-command" class="mode-btn active">Command</button>
             <button id="mode-troubleshoot" class="mode-btn">Troubleshoot</button>
             <button id="mode-logs" class="mode-btn">Logs</button>
+          </div>
+          <div class="header-actions">
+            <button id="toggle-terminal-btn" class="secondary-btn">Terminal</button>
           </div>
         </div>
         <div id="chat-container"></div>
@@ -86,14 +89,14 @@
                   <select id="jenkins-config-select">
                     <option value="">No Jenkins configured</option>
                   </select>
-                  <button id="config-jenkins-btn" class="config-btn">Configure</button>
+<button id="config-jenkins-btn" type="button" class="config-btn" onclick="openJenkinsConfigModal()">Configure</button>
                 </div>
                 <div class="config-item">
                   <label for="ansible-config-select">Ansible:</label>
                   <select id="ansible-config-select">
                     <option value="">No Ansible configured</option>
                   </select>
-                  <button id="config-ansible-btn" class="config-btn">Configure</button>
+<button id="config-ansible-btn" type="button" class="config-btn" onclick="openAnsibleConfigModal()">Configure</button>
                 </div>
               </div>
               <div class="config-row console-url-section">
@@ -120,12 +123,13 @@
       </div>
 
       <!-- Right Panel: Terminal -->
-      <div class="right-panel" id="terminal-panel">
+      <div class="right-panel collapsed" id="terminal-panel">
         <div class="terminal-header">
           <span class="terminal-title">Terminal</span>
           <div class="terminal-controls">
             <button id="clear-terminal" class="control-btn">Clear</button>
             <button id="reconnect-terminal" class="control-btn">Reconnect</button>
+            <button id="close-terminal" class="control-btn">Back</button>
           </div>
         </div>
         <div id="terminal-container"></div>
@@ -309,6 +313,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast notifications -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Load modular JavaScript files -->
   <script src="js/utils.js"></script>
