@@ -120,7 +120,8 @@ class JenkinsService:
                 'success': False,
                 'error': error_msg,
                 'error_type': 'INVALID_URL',
-                'suggestion': 'URL must start with http:// or https://'
+                'suggestion': 'URL must start with http:// or https://',
+                'url_tested': self.base_url or 'N/A'
             }
         
         # Check if we have authentication configured
@@ -130,7 +131,8 @@ class JenkinsService:
             return {
                 'success': False,
                 'error': error_msg,
-                'error_type': 'AUTHENTICATION_MISSING'
+                'error_type': 'AUTHENTICATION_MISSING',
+                'url_tested': f"{self.base_url.rstrip('/')}/api/json"
             }
         
         try:
