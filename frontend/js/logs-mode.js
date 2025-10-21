@@ -77,43 +77,43 @@ class LogsMode {
     }
     
     setupEventListeners() {
-        // Configuration buttons
-        const configJenkinsBtn = document.getElementById('config-jenkins-btn');
-        if (configJenkinsBtn) {
-            configJenkinsBtn.addEventListener('click', () => this.showJenkinsConfigModal());
-        }
-        
-        const configAnsibleBtn = document.getElementById('config-ansible-btn');
-        if (configAnsibleBtn) {
-            configAnsibleBtn.addEventListener('click', () => this.showAnsibleConfigModal());
-        }
-        
-        // Fetch builds button
-        const fetchBuildsBtn = document.getElementById('fetch-builds-btn');
-        if (fetchBuildsBtn) {
-            fetchBuildsBtn.addEventListener('click', () => this.fetchBuilds());
-        }
-        
-        // Fetch console button
-        const fetchConsoleBtn = document.getElementById('fetch-console-btn');
-        if (fetchConsoleBtn) {
-            fetchConsoleBtn.addEventListener('click', () => this.fetchConsoleFromUrl());
-        }
-        
-        // Config selection changes
-        const jenkinsSelect = document.getElementById('jenkins-config-select');
-        if (jenkinsSelect) {
-            jenkinsSelect.addEventListener('change', (e) => {
-                this.currentJenkinsConfig = e.target.value || null;
-            });
-        }
-        
-        const ansibleSelect = document.getElementById('ansible-config-select');
-        if (ansibleSelect) {
-            ansibleSelect.addEventListener('change', (e) => {
-                this.currentAnsibleConfig = e.target.value || null;
-            });
-        }
+        // Use setTimeout to ensure DOM elements are available
+        setTimeout(() => {
+            // Configuration buttons
+            const configJenkinsBtn = document.getElementById('config-jenkins-btn');
+            if (configJenkinsBtn) {
+                configJenkinsBtn.addEventListener('click', () => this.showJenkinsConfigModal());
+                console.log('Jenkins config button event listener added');
+            } else {
+                console.warn('Jenkins config button not found');
+            }
+            
+            const configAnsibleBtn = document.getElementById('config-ansible-btn');
+            if (configAnsibleBtn) {
+                configAnsibleBtn.addEventListener('click', () => this.showAnsibleConfigModal());
+            }
+            
+            // Fetch console button
+            const fetchConsoleBtn = document.getElementById('fetch-console-btn');
+            if (fetchConsoleBtn) {
+                fetchConsoleBtn.addEventListener('click', () => this.fetchConsoleFromUrl());
+            }
+            
+            // Config selection changes
+            const jenkinsSelect = document.getElementById('jenkins-config-select');
+            if (jenkinsSelect) {
+                jenkinsSelect.addEventListener('change', (e) => {
+                    this.currentJenkinsConfig = e.target.value || null;
+                });
+            }
+            
+            const ansibleSelect = document.getElementById('ansible-config-select');
+            if (ansibleSelect) {
+                ansibleSelect.addEventListener('change', (e) => {
+                    this.currentAnsibleConfig = e.target.value || null;
+                });
+            }
+        }, 200);
     }
     
     async loadConfigurations() {
@@ -179,36 +179,6 @@ class LogsMode {
         }
     }
     
-    async fetchBuilds() {
-        if (!this.currentJenkinsConfig) {
-            window.appendMessage('Please select a Jenkins configuration first', 'system');
-            return;
-        }
-        
-        const fetchBtn = document.getElementById('fetch-builds-btn');
-        const serverNameInput = document.getElementById('server-name-input');
-        const serverName = serverNameInput ? serverNameInput.value.trim() : '';
-        
-        window.setButtonLoading(fetchBtn, true);
-        
-        try {
-            const url = `/cicd/builds?jenkins_config_id=${this.currentJenkinsConfig}&server_name=${encodeURIComponent(serverName)}&limit=20`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            if (data.success) {
-                this.currentBuilds = data.builds;
-                this.displayBuilds(data.builds);
-                window.appendMessage(`Fetched ${data.total_fetched} builds for server: ${serverName || 'all'}`, 'system');
-            } else {
-                window.appendMessage(`Failed to fetch builds: ${data.error}`, 'system');
-            }
-            
-        } catch (error) {
-            window.appendMessage(`Error fetching builds: ${error.message}`, 'system');
-        } finally {
-        window.setButtonLoading(fetchBtn, false);
-    }
     
     async fetchConsoleFromUrl() {
         const consoleUrlInput = document.getElementById('console-url-input');
