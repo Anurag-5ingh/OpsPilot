@@ -6,6 +6,8 @@ This README covers local development (Windows / PowerShell), how to run the serv
 
 ## Quick start (Windows / PowerShell)
 
+Note: The UI defaults to an AI chat page; the Terminal is available via the top-right "Terminal" button and opens on the right side.
+
 1. Install Python dependencies (recommended to use a virtual environment):
 
 ```powershell
@@ -60,6 +62,12 @@ Notes about private keys
 - Alternatively, you can paste private key content (future enhancement) or make sure the server runs on the same machine where the key file resides.
 
 ## REST endpoints (useful for testing)
+
+### CI/CD configuration helpers
+- `POST /cicd/jenkins/connect` (API token required; password optional)
+- `DELETE /cicd/jenkins/configs/{id}`
+- `POST /cicd/ansible/connect`
+- `DELETE /cicd/ansible/configs/{id}`
 
 - `GET /ssh/list` — returns saved profiles (non-sensitive fields only).
 - `POST /ssh/test` — run a connection test using JSON payload. Example payload (PowerShell):

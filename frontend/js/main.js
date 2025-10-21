@@ -26,6 +26,9 @@ function initializeEventListeners() {
   
   // Mode toggle listeners
   setupModeToggleListeners();
+
+  // Terminal toggle
+  setupTerminalToggle();
 }
 
 /**
@@ -108,6 +111,21 @@ function setupTerminalControlListeners() {
   if (reconnectBtn) {
     reconnectBtn.addEventListener("click", reconnectTerminal);
   }
+
+  // Back from full-screen terminal to chat UI
+  const closeBtn = document.getElementById("close-terminal");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      const left = document.querySelector('.left-panel');
+      const right = document.getElementById('terminal-panel');
+      if (right && left) {
+        right.classList.add('collapsed');
+        right.classList.remove('full');
+        left.classList.remove('hidden');
+        left.classList.add('expanded');
+      }
+    });
+  }
 }
 
 /**
@@ -129,4 +147,30 @@ function setupModeToggleListeners() {
   if (modeLogsBtn) {
     modeLogsBtn.addEventListener("click", () => toggleMode("logs"));
   }
+}
+
+function setupTerminalToggle() {
+  const btn = document.getElementById('toggle-terminal-btn');
+  const left = document.querySelector('.left-panel');
+  const right = document.getElementById('terminal-panel');
+  if (!btn || !left || !right) return;
+  btn.addEventListener('click', () => {
+    const isCollapsed = right.classList.contains('collapsed');
+    if (isCollapsed) {
+      // Expand to full-screen terminal
+      right.classList.remove('collapsed');
+      right.classList.add('full');
+      left.classList.add('hidden');
+      if (typeof initializeTerminal === 'function' && !window.__terminalInitialized) {
+        initializeTerminal();
+        window.__terminalInitialized = true;
+      }
+    } else {
+      // Collapse terminal
+      right.classList.add('collapsed');
+      right.classList.remove('full');
+      left.classList.remove('hidden');
+      left.classList.add('expanded');
+    }
+  });
 }
