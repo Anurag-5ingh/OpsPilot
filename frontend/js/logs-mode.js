@@ -77,6 +77,17 @@ class LogsMode {
                             <span class="spinner hidden"></span>
                         </button>
                     </div>
+                    <div class="config-row console-url-section">
+                        <div class="config-item console-url-item">
+                            <label for="console-url-input">Or paste Console URL:</label>
+                            <input type="url" id="console-url-input" placeholder="https://jenkins.example.com/job/MyJob/123/console" />
+                            <small class="form-help">Direct link to specific Jenkins job console</small>
+                        </div>
+                        <button id="fetch-console-btn" class="primary-btn">
+                            <span class="btn-text">Analyze Console</span>
+                            <span class="spinner hidden"></span>
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -106,6 +117,12 @@ class LogsMode {
         const fetchBuildsBtn = document.getElementById('fetch-builds-btn');
         if (fetchBuildsBtn) {
             fetchBuildsBtn.addEventListener('click', () => this.fetchBuilds());
+        }
+        
+        // Fetch console button
+        const fetchConsoleBtn = document.getElementById('fetch-console-btn');
+        if (fetchConsoleBtn) {
+            fetchConsoleBtn.addEventListener('click', () => this.fetchConsoleFromUrl());
         }
         
         // Config selection changes
@@ -215,8 +232,207 @@ class LogsMode {
         } catch (error) {
             window.appendMessage(`Error fetching builds: ${error.message}`, 'system');
         } finally {
+        window.setButtonLoading(fetchBtn, false);
+    }
+    
+    async fetchConsoleFromUrl() {
+        const consoleUrlInput = document.getElementById('console-url-input');
+        const fetchBtn = document.getElementById('fetch-console-btn');
+        
+        const consoleUrl = consoleUrlInput ? consoleUrlInput.value.trim() : '';
+        
+        if (!consoleUrl) {
+            window.appendMessage('Please enter a Jenkins console URL', 'system');
+            return;
+        }
+        
+        // Basic URL validation
+        if (!consoleUrl.includes('/console')) {
+            window.appendMessage('URL should end with /console (e.g., /job/MyJob/123/console)', 'system');
+            return;
+        }
+        
+        window.setButtonLoading(fetchBtn, true);
+        window.appendMessage(`Fetching console logs from: ${consoleUrl}`, 'system');
+        
+        try {
+            const response = await fetch('/cicd/jenkins/console', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    console_url: consoleUrl,
+                    jenkins_config_id: this.currentJenkinsConfig
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Display the console log in a modal or dedicated section
+                this.showConsoleLogModal({
+                    job_name: data.job_name,
+                    build_number: data.build_number,
+                    console_log: data.console_log,
+                    original_url: consoleUrl
+                });
+                
+                window.appendMessage(`Successfully fetched console for ${data.job_name} #${data.build_number}`, 'system');
+            } else {
+                window.appendMessage(`Failed to fetch console: ${data.error}`, 'system');
+            }
+            
+        } catch (error) {
+            window.appendMessage(`Error fetching console: ${error.message}`, 'system');
+        } finally {
             window.setButtonLoading(fetchBtn, false);
         }
+    }
+    
+    showConsoleLogModal(logData) {
+        const modalHTML = `
+            <div class="modal-overlay" id="console-log-modal">
+                <div class="modal-content large">
+                    <div class="modal-header">
+                        <h3>Console Log: ${logData.job_name} #${logData.build_number}</h3>
+                        <button class="modal-close" id="console-modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="build-info">
+                            <div><strong>Job:</strong> ${logData.job_name}</div>
+                            <div><strong>Build:</strong> #${logData.build_number}</div>
+                            <div><strong>Source:</strong> <a href="${logData.original_url}" target="_blank">View in Jenkins</a></div>
+                        </div>
+                        <div class="console-log">
+                            <pre id="console-output">${this.escapeHtml(logData.console_log)}</pre>
+                        </div>
+                        <div class="console-actions">
+                            <button id="analyze-console-btn" class="primary-btn">
+                                <span class="btn-text">🔍 Analyze & Suggest Fix</span>
+                                <span class="spinner hidden"></span>
+                            </button>
+                        </div>
+                        <div id="analysis-results" class="analysis-results hidden">
+                            <!-- Analysis results will be inserted here -->
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="console-close-btn" class="secondary-btn">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        
+        // Setup event listeners
+        const modal = document.getElementById('console-log-modal');
+        const closeBtn = document.getElementById('console-modal-close');
+        const closeFooterBtn = document.getElementById('console-close-btn');
+        const analyzeBtn = document.getElementById('analyze-console-btn');
+        
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.onclick = closeModal;
+        closeFooterBtn.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
+        
+        analyzeBtn.onclick = async () => {
+            await this.analyzeConsoleLog(logData, analyzeBtn);
+        };
+    }
+    
+    async analyzeConsoleLog(logData, analyzeBtn) {
+        window.setButtonLoading(analyzeBtn, true);
+        
+        const resultsDiv = document.getElementById('analysis-results');
+        resultsDiv.innerHTML = '<div class="loading">Analyzing console log for errors and solutions...</div>';
+        resultsDiv.classList.remove('hidden');
+        
+        try {
+            // Use the existing AI analyzer endpoint
+            const response = await fetch('/cicd/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    console_log: logData.console_log,
+                    job_name: logData.job_name,
+                    build_number: logData.build_number,
+                    user_id: 'system'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.analysis) {
+                this.displayAnalysisResults(data.analysis, resultsDiv);
+            } else {
+                resultsDiv.innerHTML = `<div class="error">Analysis failed: ${data.error || 'Unknown error'}</div>`;
+            }
+            
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="error">Error analyzing console: ${error.message}</div>`;
+        } finally {
+            window.setButtonLoading(analyzeBtn, false);
+        }
+    }
+    
+    displayAnalysisResults(analysis, container) {
+        const resultsHTML = `
+            <div class="analysis-summary">
+                <h4>🔍 Error Analysis</h4>
+                <div class="error-summary">
+                    <strong>Root Cause:</strong> ${analysis.root_cause || 'Could not determine'}<br>
+                    <strong>Error Summary:</strong> ${analysis.error_summary || 'No specific error identified'}<br>
+                    <strong>Confidence:</strong> ${Math.round((analysis.confidence || 0) * 100)}%
+                </div>
+            </div>
+            
+            ${analysis.suggested_commands && analysis.suggested_commands.length > 0 ? `
+                <div class="suggested-commands">
+                    <h4>💡 Suggested Fix Commands</h4>
+                    <div class="commands-list">
+                        ${analysis.suggested_commands.map((cmd, i) => `
+                            <div class="command-item">
+                                <code>${cmd}</code>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="fix-actions">
+                        <button class="fix-execute-btn" onclick="logsMode.executeSuggestedFix(${JSON.stringify(analysis).replace(/"/g, '&quot;')})">
+                            ✅ Execute Fix Commands
+                        </button>
+                        <button class="fix-cancel-btn" onclick="this.style.display='none'">
+                            ❌ Cancel
+                        </button>
+                    </div>
+                </div>
+            ` : ''}
+            
+            ${analysis.suggested_playbook ? `
+                <div class="suggested-playbook">
+                    <h4>🔧 Suggested Ansible Playbook</h4>
+                    <pre><code>${analysis.suggested_playbook}</code></pre>
+                </div>
+            ` : ''}
+        `;
+        
+        container.innerHTML = resultsHTML;
+    }
+    
+    escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
     }
     
     displayBuilds(builds) {
@@ -533,14 +749,14 @@ class LogsMode {
                             <input type="text" id="jenkins-username" placeholder="your-jenkins-username" />
                         </div>
                         <div class="form-group">
-                            <label for="jenkins-password">Password: <span class="required">*</span></label>
-                            <input type="password" id="jenkins-password" placeholder="Your Jenkins password" />
-                            <small class="form-help">Your Jenkins login password (required)</small>
+                            <label for="jenkins-token">API Token: <span class="required">*</span></label>
+                            <input type="password" id="jenkins-token" placeholder="Your Jenkins API token" />
+                            <small class="form-help">Jenkins API token (required for authentication)</small>
                         </div>
                         <div class="form-group">
-                            <label for="jenkins-token">API Token:</label>
-                            <input type="password" id="jenkins-token" placeholder="Optional: API token for enhanced security" />
-                            <small class="form-help">Optional: Leave empty to use password authentication</small>
+                            <label for="jenkins-password">Password:</label>
+                            <input type="password" id="jenkins-password" placeholder="Optional: Your Jenkins password" />
+                            <small class="form-help">Optional: Jenkins login password</small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -577,11 +793,11 @@ class LogsMode {
             const name = document.getElementById('jenkins-name').value.trim();
             const baseUrl = document.getElementById('jenkins-url').value.trim();
             const username = document.getElementById('jenkins-username').value.trim();
-            const password = document.getElementById('jenkins-password').value;
+            const password = document.getElementById('jenkins-password').value.trim();
             const apiToken = document.getElementById('jenkins-token').value.trim();
             
-            if (!name || !baseUrl || !username || !password) {
-                alert('Please fill in all required fields (Name, URL, Username, Password)');
+            if (!name || !baseUrl || !username || !apiToken) {
+                alert('Please fill in all required fields (Name, URL, Username, API Token)');
                 return;
             }
             
@@ -614,19 +830,19 @@ class LogsMode {
         }
     }
     
-    async saveJenkinsConfig(name, baseUrl, username, password, apiToken = '') {
+    async saveJenkinsConfig(name, baseUrl, username, password, apiToken) {
         try {
             const requestBody = {
                 name,
                 base_url: baseUrl,
                 username,
-                password,
+                api_token: apiToken,
                 user_id: 'system' // In real app, use current user
             };
             
-            // Only include API token if provided
-            if (apiToken && apiToken.trim()) {
-                requestBody.api_token = apiToken.trim();
+            // Only include password if provided (optional)
+            if (password && password.trim()) {
+                requestBody.password = password.trim();
             }
             
             const response = await fetch('/cicd/jenkins/connect', {

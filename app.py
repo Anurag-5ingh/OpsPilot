@@ -1141,27 +1141,28 @@ def connect_jenkins():
                 logger.error(f"Jenkins config validation failed: missing {field}")
                 return jsonify({"error": f"{field} is required"}), 400
         
-        # Must have either password or API token
-        if not data.get('password') and not data.get('api_token'):
-            return jsonify({"error": "Either password or api_token is required"}), 400
+        # API token is now required, password is optional
+        if not data.get('api_token'):
+            return jsonify({"error": "API token is required for Jenkins authentication"}), 400
         
         logger.info(f"Configuring Jenkins: {data['name']} at {data['base_url']}")
         
-        # Store credentials securely
+        # Store credentials securely (API token is required, password is optional)
         password_secret_id = None
         api_token_secret_id = None
         
+        # Store API token (required)
+        api_token_secret_id = f"jenkins_token_{data['user_id']}_{hash(data['name'])}"
+        if not set_secret(api_token_secret_id, data['api_token']):
+            logger.warning("Failed to store API token securely, using fallback")
+            api_token_secret_id = None  # Will use fallback below
+        
+        # Store password if provided (optional)
         if data.get('password'):
             password_secret_id = f"jenkins_password_{data['user_id']}_{hash(data['name'])}"
             if not set_secret(password_secret_id, data['password']):
                 logger.warning("Failed to store password securely, using fallback")
                 password_secret_id = None  # Will use fallback below
-        
-        if data.get('api_token'):
-            api_token_secret_id = f"jenkins_token_{data['user_id']}_{hash(data['name'])}"
-            if not set_secret(api_token_secret_id, data['api_token']):
-                logger.warning("Failed to store API token securely, using fallback")
-                api_token_secret_id = None  # Will use fallback below
         
         # Create Jenkins configuration
         jenkins_config = JenkinsConfig(
@@ -1174,10 +1175,10 @@ def connect_jenkins():
         )
         
         # Set fallback credentials if keyring storage failed
-        if not password_secret_id and data.get('password'):
-            jenkins_config._fallback_password = data['password']
         if not api_token_secret_id and data.get('api_token'):
             jenkins_config._fallback_token = data['api_token']
+        if not password_secret_id and data.get('password'):
+            jenkins_config._fallback_password = data['password']
         
         config_id = jenkins_config.save()
         
@@ -1266,6 +1267,101 @@ def connect_ansible():
     except Exception as e:
         logger.error(f"Failed to connect Ansible: {e}")
         return jsonify({"error": "Failed to configure Ansible connection"}), 500
+
+@app.route("/cicd/jenkins/console", methods=["POST"])
+def fetch_console_from_url():
+    """
+    Parse a Jenkins console URL and fetch the logs directly.
+    
+    Request body:
+    {
+        "console_url": "https://jenkins.example.com/job/MyJob/123/console",
+        "jenkins_config_id": 1
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "job_name": "MyJob",
+        "build_number": 123,
+        "console_log": "...",
+        "parsed_url": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        console_url = data.get('console_url')
+        jenkins_config_id = data.get('jenkins_config_id')
+        
+        if not console_url:
+            return jsonify({"error": "console_url is required"}), 400
+        
+        # Parse the console URL
+        from urllib.parse import urlparse, unquote
+        import re
+        
+        # Extract job details from URL
+        # Example: https://fe0vm05248.de.bosch.com:9005/tools/jenkins/job/Ansible%20BCN/job/ncg3kor/1204/console
+        url_pattern = r'/job/([^/]+)(?:/job/([^/]+))*/([0-9]+)/console'
+        match = re.search(url_pattern, console_url)
+        
+        if not match:
+            return jsonify({
+                "error": "Invalid console URL format",
+                "expected": "URL should end with /job/JobName/BuildNumber/console"
+            }), 400
+        
+        # Extract job path and build number
+        job_path_parts = []
+        url_parts = console_url.split('/job/')
+        for i in range(1, len(url_parts)):
+            part = url_parts[i].split('/')[0]
+            job_path_parts.append(unquote(part))
+        
+        # Last part before build number is the final job name
+        job_name = '/'.join(job_path_parts[:-1]) if len(job_path_parts) > 1 else job_path_parts[0]
+        build_number = int(match.group(3))
+        
+        # Get Jenkins config if provided
+        jenkins_config = None
+        if jenkins_config_id:
+            jenkins_config = JenkinsConfig.get_by_id(jenkins_config_id)
+        
+        if jenkins_config:
+            # Use existing Jenkins service
+            jenkins_service = JenkinsService(jenkins_config)
+            try:
+                # Get console log using the service
+                console_log, has_more = jenkins_service.get_console_log(
+                    job_name, build_number
+                )
+            finally:
+                jenkins_service.close()
+        else:
+            # Direct fetch from URL (less secure but works for public Jenkins)
+            import requests
+            response = requests.get(console_url.replace('/console', '/consoleText'), 
+                                  verify=False, timeout=30)
+            response.raise_for_status()
+            console_log = response.text
+            has_more = False
+        
+        return jsonify({
+            "success": True,
+            "job_name": job_name,
+            "build_number": build_number,
+            "console_log": console_log,
+            "has_more_data": has_more,
+            "parsed_url": {
+                "original_url": console_url,
+                "job_path_parts": job_path_parts,
+                "full_job_name": job_name
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch console from URL: {e}")
+        return jsonify({"error": f"Failed to fetch console log: {str(e)}"}), 500
 
 @app.route("/cicd/builds", methods=["GET"])
 def fetch_builds():
