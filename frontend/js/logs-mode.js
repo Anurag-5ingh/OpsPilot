@@ -18,22 +18,7 @@ class LogsMode {
     }
     
     initializeUI() {
-        
-        // Create logs input container if it doesn't exist
-        let logsContainer = document.getElementById('logs-input-container');
-        if (!logsContainer) {
-            logsContainer = document.createElement('div');
-            logsContainer.id = 'logs-input-container';
-            logsContainer.className = 'chat-input-container hidden';
-            logsContainer.innerHTML = this.getLogsUIHTML();
-            
-            // Insert after troubleshoot container
-            const troubleshootContainer = document.getElementById('troubleshoot-input-container');
-            if (troubleshootContainer && troubleshootContainer.parentNode) {
-                troubleshootContainer.parentNode.insertBefore(logsContainer, troubleshootContainer.nextSibling);
-            }
-        }
-        
+        // Logs container is now in HTML, just set up event listeners
         this.setupEventListeners();
     }
     
