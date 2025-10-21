@@ -391,10 +391,8 @@ class LogsMode {
         };
         return text.replace(/[&<>"']/g, m => map[m]);
     }
-    }
     
     displayBuilds(builds) {
-        const buildsList = document.getElementById('builds-list');
         const noBuildsMessage = document.getElementById('no-builds-message');
         
         if (!buildsList) return;
