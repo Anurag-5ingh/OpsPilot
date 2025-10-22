@@ -112,16 +112,27 @@ class DatabaseManager:
                     last_sync TIMESTAMP
                 );
             """)
+            conn.commit()
         else:
-            # Table exists, check if we need to add password_secret_id column
-            table_schema = result[0]
-            if 'password_secret_id' not in table_schema:
-                logger.info("Adding password_secret_id column to existing jenkins_configs table")
-                conn.execute("""
-                    ALTER TABLE jenkins_configs 
-                    ADD COLUMN password_secret_id TEXT;
-                """)
-                conn.commit()
+            # Table exists, check for missing columns and add them
+            table_schema = result[0] or ''
+            try:
+                if 'password_secret_id' not in table_schema:
+                    logger.info("Adding password_secret_id column to existing jenkins_configs table")
+                    conn.execute("""
+                        ALTER TABLE jenkins_configs 
+                        ADD COLUMN password_secret_id TEXT;
+                    """)
+                    conn.commit()
+                if 'api_token_secret_id' not in table_schema:
+                    logger.info("Adding api_token_secret_id column to existing jenkins_configs table")
+                    conn.execute("""
+                        ALTER TABLE jenkins_configs 
+                        ADD COLUMN api_token_secret_id TEXT;
+                    """)
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Failed migrating jenkins_configs table: {e}")
     
     def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute SELECT query and return results as list of dicts."""

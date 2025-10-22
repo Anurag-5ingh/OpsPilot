@@ -143,15 +143,20 @@ class LogsMode {
         const select = document.getElementById('jenkins-config-select');
         if (!select) return;
         
-        // Clear existing options except first
+        // Clear existing options and set a helpful default
         select.innerHTML = '<option value="">Select Jenkins...</option>';
         
-        configs.forEach(config => {
-            const option = document.createElement('option');
-            option.value = config.id;
-            option.textContent = `${config.name} (${config.base_url})`;
-            select.appendChild(option);
-        });
+        if (Array.isArray(configs) && configs.length > 0) {
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = `${config.name} (${config.base_url})`;
+                select.appendChild(option);
+            });
+        } else {
+            // Keep default only
+            console.warn('[LogsMode] No Jenkins configs found for dropdown');
+        }
         
         // Add delete button next to selector if not present
         let delBtn = document.getElementById('delete-jenkins-config-btn');
