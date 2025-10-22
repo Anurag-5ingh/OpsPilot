@@ -1293,6 +1293,11 @@ def fetch_console_from_url():
         console_url = data.get('console_url')
         jenkins_config_id = data.get('jenkins_config_id')
         
+        logger.info(
+            "Incoming Jenkins console fetch: url=%s jenkins_config_id=%s",
+            console_url, jenkins_config_id
+        )
+        
         if not console_url:
             return jsonify({"error": "console_url is required"}), 400
         
@@ -1322,15 +1327,34 @@ def fetch_console_from_url():
         job_name = '/'.join(job_path_parts)
         build_number = int(match.group(3))
         
+        logger.info(
+            "Parsed console URL: job_name=%s build_number=%s parts=%s",
+            job_name, build_number, job_path_parts
+        )
+        
         # Get Jenkins config if provided
         jenkins_config = None
         if jenkins_config_id:
             jenkins_config = JenkinsConfig.get_by_id(jenkins_config_id)
+            if jenkins_config:
+                logger.info(
+                    "Using Jenkins config: id=%s name=%s base_url=%s user=%s has_token=%s has_password=%s",
+                    jenkins_config.id, jenkins_config.name, jenkins_config.base_url, jenkins_config.username,
+                    bool(jenkins_config.api_token_secret_id), bool(jenkins_config.password_secret_id)
+                )
+            else:
+                logger.warning("jenkins_config_id=%s not found; falling back to direct URL fetch", jenkins_config_id)
+        else:
+            logger.warning("No jenkins_config_id provided; attempting direct URL fetch (may fail if auth required)")
         
         if jenkins_config:
             # Use existing Jenkins service
             jenkins_service = JenkinsService(jenkins_config)
             try:
+                logger.info(
+                    "JenkinsService auth status: config_id=%s auth_present=%s",
+                    jenkins_config.id, bool(getattr(jenkins_service, '_auth_header', None))
+                )
                 # Get console log using the service
                 console_log, has_more = jenkins_service.get_console_log(
                     job_name, build_number
@@ -1340,8 +1364,13 @@ def fetch_console_from_url():
         else:
             # Direct fetch from URL (less secure but works for public Jenkins)
             import requests
-            response = requests.get(console_url.replace('/console', '/consoleText'), 
-                                  verify=False, timeout=30)
+            direct_url = console_url.replace('/console', '/consoleText')
+            logger.info("Direct console fetch (no auth): url=%s", direct_url)
+            response = requests.get(direct_url, verify=False, timeout=30)
+            
+            if response.status_code in (401, 403):
+                logger.error("Direct console fetch failed with auth error: status=%s reason=%s", response.status_code, response.reason)
+            
             response.raise_for_status()
             console_log = response.text
             has_more = False
