@@ -112,16 +112,27 @@ class DatabaseManager:
                     last_sync TIMESTAMP
                 );
             """)
+            conn.commit()
         else:
-            # Table exists, check if we need to add password_secret_id column
-            table_schema = result[0]
-            if 'password_secret_id' not in table_schema:
-                logger.info("Adding password_secret_id column to existing jenkins_configs table")
-                conn.execute("""
-                    ALTER TABLE jenkins_configs 
-                    ADD COLUMN password_secret_id TEXT;
-                """)
-                conn.commit()
+            # Table exists, check for missing columns and add them
+            table_schema = result[0] or ''
+            try:
+                if 'password_secret_id' not in table_schema:
+                    logger.info("Adding password_secret_id column to existing jenkins_configs table")
+                    conn.execute("""
+                        ALTER TABLE jenkins_configs 
+                        ADD COLUMN password_secret_id TEXT;
+                    """)
+                    conn.commit()
+                if 'api_token_secret_id' not in table_schema:
+                    logger.info("Adding api_token_secret_id column to existing jenkins_configs table")
+                    conn.execute("""
+                        ALTER TABLE jenkins_configs 
+                        ADD COLUMN api_token_secret_id TEXT;
+                    """)
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Failed migrating jenkins_configs table: {e}")
     
     def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute SELECT query and return results as list of dicts."""
@@ -231,13 +242,20 @@ class BuildLog:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        # Normalize datetime fields that may come back from SQLite as strings
+        def to_iso(value):
+            if isinstance(value, datetime):
+                return value.isoformat()
+            # Leave strings as-is; frontend can display them
+            return value
+        
         return {
             'id': self.id,
             'job_name': self.job_name,
             'build_number': self.build_number,
             'status': self.status,
             'duration': self.duration,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'started_at': to_iso(self.started_at) if self.started_at else None,
             'jenkins_url': self.jenkins_url,
             'target_server': self.target_server,
             'console_log_url': self.console_log_url,
@@ -314,6 +332,10 @@ class AnsibleConfig:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        def to_iso(value):
+            if isinstance(value, datetime):
+                return value.isoformat()
+            return value
         return {
             'id': self.id,
             'user_id': self.user_id,
@@ -321,7 +343,7 @@ class AnsibleConfig:
             'local_path': self.local_path,
             'git_repo_url': self.git_repo_url,
             'git_branch': self.git_branch,
-            'last_synced': self.last_synced.isoformat() if self.last_synced else None,
+            'last_synced': to_iso(self.last_synced) if self.last_synced else None,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
@@ -485,14 +507,10 @@ class JenkinsConfig:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (without sensitive data)."""
-        # Handle datetime vs string for last_sync to avoid attribute errors
-        if isinstance(self.last_sync, str):
-            last_sync_serialized = self.last_sync
-        else:
-            try:
-                last_sync_serialized = self.last_sync.isoformat() if self.last_sync else None
-            except Exception:
-                last_sync_serialized = None
+        def to_iso(value):
+            if isinstance(value, datetime):
+                return value.isoformat()
+            return value
         return {
             'id': self.id,
             'user_id': self.user_id,
@@ -501,7 +519,7 @@ class JenkinsConfig:
             'username': self.username,
             'has_password': bool(self.password_secret_id),
             'has_api_token': bool(self.api_token_secret_id),
-            'last_sync': last_sync_serialized,
+            'last_sync': to_iso(self.last_sync) if self.last_sync else None,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }

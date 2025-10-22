@@ -53,6 +53,20 @@ class JenkinsService:
         
         # Set up authentication
         self._setup_auth()
+        
+        # Log sanitized initialization details
+        try:
+            logger.info(
+                "JenkinsService initialized: config_id=%s base_url=%s user=%s has_api_token=%s has_password=%s auth_header_set=%s",
+                getattr(self.config, 'id', None),
+                self.base_url,
+                self.username,
+                bool(getattr(self.config, 'api_token_secret_id', None)),
+                bool(getattr(self.config, 'password_secret_id', None)),
+                bool(self._auth_header),
+            )
+        except Exception:
+            pass
     
     def _setup_auth(self):
         """Set up authentication headers using either API token or password."""
@@ -435,8 +449,25 @@ class JenkinsService:
                 url = f"{self.base_url.rstrip('/')}{job_path}/{build_number}/consoleText"
                 params = {}
             
-            logger.debug(f"Fetching console log from: {url} params={params}")
+            # Log auth/header presence without leaking secrets
+            try:
+                dbg_headers = {k: ('<redacted>' if k.lower() == 'authorization' else v) for k, v in self._session.headers.items()}
+                logger.info(
+                    "Fetching console log: config_id=%s job=%s build=%s url=%s start_offset=%s max_lines=%s auth_present=%s",
+                    getattr(self.config, 'id', None), job_name, build_number, url, start_offset, max_lines, bool(self._auth_header)
+                )
+                logger.debug(f"Session headers: {dbg_headers}")
+            except Exception:
+                pass
+            
             response = self._session.get(url, params=params)
+            
+            if response.status_code in (401, 403):
+                logger.error(
+                    "Authorization error fetching console log: status=%s reason=%s config_id=%s user=%s auth_present=%s url=%s",
+                    response.status_code, response.reason, getattr(self.config, 'id', None), self.username, bool(self._auth_header), url
+                )
+            
             response.raise_for_status()
             
             log_text = response.text
@@ -453,6 +484,21 @@ class JenkinsService:
             
             return log_text, has_more
             
+        except requests.HTTPError as e:
+            status = getattr(e.response, 'status_code', 'N/A') if hasattr(e, 'response') and e.response is not None else 'N/A'
+            reason = getattr(e.response, 'reason', '') if hasattr(e, 'response') and e.response is not None else ''
+            preview = ''
+            try:
+                if hasattr(e, 'response') and e.response is not None:
+                    text = e.response.text or ''
+                    preview = text[:200] + ('...' if len(text) > 200 else '')
+            except Exception:
+                pass
+            logger.error(
+                "HTTP error fetching console log for %s#%s: status=%s reason=%s auth_present=%s preview=%s",
+                job_name, build_number, status, reason, bool(self._auth_header), preview
+            )
+            return "", False
         except Exception as e:
             logger.error(f"Failed to get console log for {job_name}#{build_number}: {e}")
             return "", False
@@ -461,6 +507,10 @@ class JenkinsService:
                             lines: int = 100) -> str:
         """Get the last N lines of console log for error analysis."""
         try:
+            logger.info(
+                "Fetching console log tail: config_id=%s job=%s build=%s lines=%s auth_present=%s",
+                getattr(self.config, 'id', None), job_name, build_number, lines, bool(self._auth_header)
+            )
             log_text, _ = self.get_console_log(job_name, build_number, max_lines=lines)
             return log_text
         except Exception as e:

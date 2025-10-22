@@ -1145,18 +1145,7 @@ def connect_jenkins():
         if not data.get('api_token'):
             return jsonify({"error": "API token is required for Jenkins authentication"}), 400
         
-        # Normalize base URL (strip job/build/console suffixes)
-        raw_base_url = data['base_url'].strip()
-        normalized_base = raw_base_url
-        if '/job/' in normalized_base:
-            normalized_base = normalized_base.split('/job/')[0]
-        # Remove trailing specific paths like /console or /api/json if mistakenly included
-        for suffix in ['/console', '/consoleText', '/api/json']:
-            if normalized_base.endswith(suffix):
-                normalized_base = normalized_base[: -len(suffix)]
-        # Ensure no trailing slash duplication
-        normalized_base = normalized_base.rstrip('/')
-        logger.info(f"Configuring Jenkins: {data['name']} at {normalized_base}")
+        logger.info(f"Configuring Jenkins: {data['name']} at {data['base_url']}")
         
         # Store credentials securely (API token is required, password is optional)
         password_secret_id = None
@@ -1179,7 +1168,7 @@ def connect_jenkins():
         jenkins_config = JenkinsConfig(
             user_id=data['user_id'],
             name=data['name'],
-            base_url=normalized_base,
+            base_url=data['base_url'],
             username=data['username'],
             password_secret_id=password_secret_id,
             api_token_secret_id=api_token_secret_id
@@ -1203,13 +1192,9 @@ def connect_jenkins():
             # Clean up if connection failed
             logger.error(f"Jenkins connection test failed: {connection_test.get('error')}")
             jenkins_config.delete()
-            # Add hint if user supplied a job or console URL
-            hint = ""
-            if '/job/' in raw_base_url or raw_base_url.endswith(('/console', '/consoleText')):
-                hint = " Hint: Use the Jenkins base URL (e.g., https://host[:port]/jenkins), not a specific job/console URL."
             return jsonify({
                 "success": False,
-                "error": f"Connection test failed: {connection_test.get('error')}.{hint}"
+                "error": f"Connection test failed: {connection_test.get('error')}"
             }), 400
         
         logger.info(f"Jenkins connection test successful: {connection_test}")
@@ -1291,8 +1276,7 @@ def fetch_console_from_url():
     Request body:
     {
         "console_url": "https://jenkins.example.com/job/MyJob/123/console",
-        "jenkins_config_id": 1,
-        "user_id": "system" (optional)
+        "jenkins_config_id": 1
     }
     
     Returns:
@@ -1308,7 +1292,11 @@ def fetch_console_from_url():
         data = request.get_json()
         console_url = data.get('console_url')
         jenkins_config_id = data.get('jenkins_config_id')
-        user_id = data.get('user_id', 'system')
+        
+        logger.info(
+            "Incoming Jenkins console fetch: url=%s jenkins_config_id=%s",
+            console_url, jenkins_config_id
+        )
         
         if not console_url:
             return jsonify({"error": "console_url is required"}), 400
@@ -1318,6 +1306,7 @@ def fetch_console_from_url():
         import re
         
         # Extract job details from URL
+        # Example: https://fe0vm05248.de.bosch.com:9005/tools/jenkins/job/Ansible%20BCN/job/ncg3kor/1204/console
         url_pattern = r'/job/([^/]+)(?:/job/([^/]+))*/([0-9]+)/console'
         match = re.search(url_pattern, console_url)
         
@@ -1338,79 +1327,53 @@ def fetch_console_from_url():
         job_name = '/'.join(job_path_parts)
         build_number = int(match.group(3))
         
-        # Resolve Jenkins config (explicit or auto-match by URL)
+        logger.info(
+            "Parsed console URL: job_name=%s build_number=%s parts=%s",
+            job_name, build_number, job_path_parts
+        )
+        
+        # Get Jenkins config if provided
         jenkins_config = None
         if jenkins_config_id:
             jenkins_config = JenkinsConfig.get_by_id(jenkins_config_id)
+            if jenkins_config:
+                logger.info(
+                    "Using Jenkins config: id=%s name=%s base_url=%s user=%s has_token=%s has_password=%s",
+                    jenkins_config.id, jenkins_config.name, jenkins_config.base_url, jenkins_config.username,
+                    bool(jenkins_config.api_token_secret_id), bool(jenkins_config.password_secret_id)
+                )
+            else:
+                logger.warning("jenkins_config_id=%s not found; falling back to direct URL fetch", jenkins_config_id)
         else:
-            try:
-                parsed = urlparse(console_url)
-                base_candidate = f"{parsed.scheme}://{parsed.netloc}"
-                configs = JenkinsConfig.get_by_user(user_id)
-                for cfg in configs:
-                    if cfg.base_url.startswith(base_candidate) or base_candidate.startswith(cfg.base_url):
-                        jenkins_config = cfg
-                        break
-            except Exception:
-                pass
+            logger.warning("No jenkins_config_id provided; attempting direct URL fetch (may fail if auth required)")
         
         if jenkins_config:
             # Use existing Jenkins service
             jenkins_service = JenkinsService(jenkins_config)
             try:
-                # Build consoleText URL and fetch using the same session to inspect status
-                from urllib.parse import quote
-                encoded_job = quote(job_name)
-                url = f"{jenkins_service.base_url.rstrip('/')}/job/{encoded_job}/{build_number}/consoleText"
-                resp = jenkins_service._session.get(url)
-                if resp.status_code == 200:
-                    console_log = resp.text
-                    has_more = False
-                elif resp.status_code in (401, 403):
-                    # Auth issues
-                    return jsonify({
-                        "success": False,
-                        "error": f"HTTP {resp.status_code}: Access denied to Jenkins console",
-                        "error_type": "AUTH_FORBIDDEN" if resp.status_code == 403 else "AUTH_REQUIRED",
-                        "suggestion": "Verify Jenkins API token and permissions in Configure > Jenkins",
-                        "job_name": job_name,
-                        "build_number": build_number
-                    }), 200
-                else:
-                    return jsonify({
-                        "success": False,
-                        "error": f"HTTP {resp.status_code}: {resp.reason}",
-                        "error_type": "HTTP_ERROR",
-                        "job_name": job_name,
-                        "build_number": build_number
-                    }), 200
+                logger.info(
+                    "JenkinsService auth status: config_id=%s auth_present=%s",
+                    jenkins_config.id, bool(getattr(jenkins_service, '_auth_header', None))
+                )
+                # Get console log using the service
+                console_log, has_more = jenkins_service.get_console_log(
+                    job_name, build_number
+                )
             finally:
                 jenkins_service.close()
         else:
             # Direct fetch from URL (less secure but works for public Jenkins)
             import requests
-            try:
-                response = requests.get(console_url.replace('/console', '/consoleText'), 
-                                      verify=False, timeout=30)
-                if response.status_code == 200:
-                    console_log = response.text
-                    has_more = False
-                else:
-                    return jsonify({
-                        "success": False,
-                        "error": f"HTTP {response.status_code}: {response.reason}",
-                        "error_type": "HTTP_ERROR",
-                        "job_name": job_name,
-                        "build_number": build_number
-                    }), 200
-            except requests.exceptions.RequestException as e:
-                return jsonify({
-                    "success": False,
-                    "error": f"Network error: {str(e)}",
-                    "error_type": "NETWORK_ERROR",
-                    "job_name": job_name,
-                    "build_number": build_number
-                }), 200
+            direct_url = console_url.replace('/console', '/consoleText')
+            logger.info("Direct console fetch (no auth): url=%s", direct_url)
+            response = requests.get(direct_url, verify=False, timeout=30)
+            
+            if response.status_code in (401, 403):
+                logger.error("Direct console fetch failed with auth error: status=%s reason=%s", response.status_code, response.reason)
+            
+            response.raise_for_status()
+            console_log = response.text
+            has_more = False
         
         return jsonify({
             "success": True,
@@ -1589,62 +1552,6 @@ def analyze_build_failure():
             "error": "Failed to analyze build failure"
         }), 500
 
-@app.route("/cicd/analyze", methods=["POST"])
-def analyze_console_log():
-    """
-    Analyze raw Jenkins console log and return structured analysis and suggestions.
-
-    Request body:
-    {
-        "console_log": "...",
-        "job_name": "MyJob" (optional),
-        "build_number": 123 (optional),
-        "ansible_config_id": 2 (optional)
-    }
-    """
-    try:
-        data = request.get_json() or {}
-        console_log = data.get('console_log', '')
-        job_name = data.get('job_name') or 'UnknownJob'
-        build_number = int(data.get('build_number') or 0)
-        ansible_config_id = data.get('ansible_config_id')
-
-        if not console_log:
-            return jsonify({"success": False, "error": "console_log is required"}), 400
-
-        # Quick pattern analysis
-        quick = cicd_analyzer._quick_error_analysis(console_log)
-        # AI analysis
-        ai = cicd_analyzer._ai_analyze_logs(job_name, build_number, console_log, None, quick)
-
-        # Optional Ansible context
-        ansible_service = None
-        if ansible_config_id:
-            ansible_cfg = AnsibleConfig.get_by_id(int(ansible_config_id))
-            if ansible_cfg:
-                ansible_service = AnsibleService(ansible_cfg)
-
-        # Build minimal BuildLog for suggestion generation
-        fake_build = BuildLog(job_name=job_name, build_number=build_number, status='FAILURE')
-        fixes = cicd_analyzer._generate_fix_suggestions(ai, fake_build, console_log, ansible_service)
-
-        analysis = {
-            'error_summary': ai.get('error_summary', 'Build result review'),
-            'root_cause': ai.get('root_cause', 'Unknown'),
-            'confidence': ai.get('confidence_score', ai.get('confidence', 0.6)),
-            'confidence_score': ai.get('confidence_score', 0.6),
-            'priority': ai.get('priority', 'medium'),
-            'suggested_commands': fixes.get('commands', []),
-            'suggested_playbook': fixes.get('playbook')
-        }
-
-        return jsonify({"success": True, "analysis": analysis}), 200
-
-    except Exception as e:
-        logger.error(f"Failed to analyze console log: {e}")
-        return jsonify({"success": False, "error": "Failed to analyze console log"}), 500
-
-
 @app.route("/cicd/fix/execute", methods=["POST"])
 def execute_fix_commands():
     """
@@ -1747,6 +1654,73 @@ def execute_fix_commands():
         logger.error(f"Failed to execute fix commands: {e}")
         return jsonify({"error": "Failed to execute fix commands"}), 500
 
+@app.route("/cicd/analyze/console", methods=["POST"])
+def analyze_console_direct():
+    """Analyze a raw console log payload (no build ID required)."""
+    try:
+        data = request.get_json() or {}
+        console_log = data.get('console_log')
+        job_name = data.get('job_name', 'Unknown Job')
+        build_number = data.get('build_number', 0)
+        jenkins_config_id = data.get('jenkins_config_id')
+        
+        if not console_log:
+            return jsonify({"error": "console_log is required"}), 400
+        
+        # Create a temporary BuildLog-like object for analysis context
+        tmp_build = BuildLog(
+            job_name=job_name,
+            build_number=build_number,
+            status='FAILURE',
+            duration=None,
+            started_at=None,
+            jenkins_url=None,
+            target_server=None,
+            console_log_url=None
+        )
+        tmp_build.id = None
+        
+        # Optionally create JenkinsService if config provided (not used to fetch logs here)
+        jenkins_service = None
+        if jenkins_config_id:
+            config = JenkinsConfig.get_by_id(int(jenkins_config_id))
+            if config:
+                jenkins_service = JenkinsService(config)
+        
+        try:
+            analyzer = cicd_analyzer  # AILogAnalyzer already initialized in module
+            # Bypass fetching logs; pass text directly into AI analyzer path
+            # We'll reuse its private methods via a small shim
+            quick = analyzer._quick_error_analysis(console_log)  # type: ignore
+            ai_analysis = analyzer._ai_analyze_logs(  # type: ignore
+                job_name=job_name,
+                build_number=build_number,
+                console_log=console_log,
+                target_server=None,
+                quick_analysis=quick
+            )
+            suggestions = analyzer._generate_fix_suggestions(  # type: ignore
+                ai_analysis, tmp_build, console_log, None
+            )
+            result = {
+                'success': True,
+                'job_name': job_name,
+                'build_number': build_number,
+                'error_summary': ai_analysis.get('error_summary', 'Build failed'),
+                'root_cause': ai_analysis.get('root_cause', ''),
+                'suggested_commands': suggestions.get('commands', []),
+                'suggested_playbook': suggestions.get('playbook'),
+                'confidence': ai_analysis.get('confidence_score', 0.5)
+            }
+            return jsonify({'success': True, 'analysis': result}), 200
+        finally:
+            if jenkins_service:
+                jenkins_service.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to analyze console directly: {e}")
+        return jsonify({"error": "Failed to analyze console"}), 500
+
 @app.route("/cicd/jenkins/configs", methods=["GET"])
 def list_jenkins_configs():
     """List Jenkins configurations for a user."""
@@ -1756,14 +1730,16 @@ def list_jenkins_configs():
             return jsonify({"error": "user_id is required"}), 400
         
         configs = JenkinsConfig.get_by_user(user_id)
+        logger.info("Listing Jenkins configs: user_id=%s count=%s", user_id, len(configs))
         return jsonify({
             "success": True,
             "configs": [config.to_dict() for config in configs]
         }), 200
         
     except Exception as e:
-        logger.error(f"Failed to list Jenkins configs: {e}")
-        return jsonify({"error": "Failed to list Jenkins configurations"}), 500
+        import traceback
+        logger.error(f"Failed to list Jenkins configs: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to list Jenkins configurations: {str(e)}"}), 500
 
 @app.route("/cicd/ansible/configs", methods=["GET"])
 def list_ansible_configs():
