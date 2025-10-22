@@ -14,6 +14,12 @@ class LogsMode {
         this.selectedBuild = null;
         this.currentAnalysis = null;
         
+        // Install global modal handlers once
+        if (!window.__logsConsoleModalHandlersInstalled) {
+            this._installGlobalConsoleModalHandlers();
+            window.__logsConsoleModalHandlersInstalled = true;
+        }
+        
         this.initializeUI();
         this.loadConfigurations();
     }
@@ -304,6 +310,41 @@ class LogsMode {
         }
     }
     
+    _installGlobalConsoleModalHandlers() {
+        document.addEventListener('click', async (e) => {
+            const target = e.target;
+            if (!target) return;
+            // Close handlers (X and footer Close)
+            if (target.id === 'console-modal-close' || target.id === 'console-close-btn' || target.closest('#console-modal-close') || target.closest('#console-close-btn')) {
+                const modal = document.getElementById('console-log-modal');
+                if (modal) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    modal.remove();
+                }
+                return;
+            }
+            // Analyze handler
+            if (target.id === 'analyze-console-btn' || target.closest('#analyze-console-btn')) {
+                const modal = document.getElementById('console-log-modal');
+                if (!modal) return;
+                const payloadStr = modal.dataset && modal.dataset.logPayload;
+                if (!payloadStr) return;
+                try {
+                    const payload = JSON.parse(payloadStr);
+                    const analyzeBtn = document.getElementById('analyze-console-btn');
+                    if (analyzeBtn && window.logsMode && typeof window.logsMode.analyzeConsoleLog === 'function') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await window.logsMode.analyzeConsoleLog(payload, analyzeBtn);
+                    }
+                } catch (err) {
+                    console.error('[LogsMode] Failed to parse modal payload:', err);
+                }
+            }
+        }, true);
+    }
+
     showConsoleLogModal(logData) {
         console.log('[LogsMode] showConsoleLogModal: creating modal for', logData.job_name, '#' + logData.build_number);
         
@@ -344,6 +385,18 @@ class LogsMode {
         
         // Setup event listeners with proper error handling and logging
         const modal = document.getElementById('console-log-modal');
+        if (modal) {
+            // Attach minimal payload for delegated handlers
+            try {
+                modal.dataset.logPayload = JSON.stringify({
+                    job_name: logData.job_name,
+                    build_number: logData.build_number,
+                    console_log: logData.console_log
+                });
+            } catch (err) {
+                console.warn('[LogsMode] Failed to attach modal payload', err);
+            }
+        }
         const closeBtn = document.getElementById('console-modal-close');
         const closeFooterBtn = document.getElementById('console-close-btn');
         const analyzeBtn = document.getElementById('analyze-console-btn');
@@ -405,7 +458,8 @@ class LogsMode {
         
         // Ensure modal is visible and clickable
         if (modal) {
-            modal.style.zIndex = '10000';
+            // Raise above any other overlays
+            modal.style.zIndex = '10050';
             modal.style.pointerEvents = 'auto';
         }
         
