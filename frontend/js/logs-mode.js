@@ -300,6 +300,8 @@ class LogsMode {
     }
     
     showConsoleLogModal(logData) {
+        console.log('[LogsMode] showConsoleLogModal: creating modal for', logData.job_name, '#' + logData.build_number);
+        
         const modalHTML = `
             <div class="modal-overlay" id="console-log-modal">
                 <div class="modal-content large">
@@ -335,25 +337,74 @@ class LogsMode {
         
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         
-        // Setup event listeners
+        // Setup event listeners with proper error handling and logging
         const modal = document.getElementById('console-log-modal');
         const closeBtn = document.getElementById('console-modal-close');
         const closeFooterBtn = document.getElementById('console-close-btn');
         const analyzeBtn = document.getElementById('analyze-console-btn');
         
+        console.log('[LogsMode] Modal elements found:', {
+            modal: !!modal,
+            closeBtn: !!closeBtn,
+            closeFooterBtn: !!closeFooterBtn,
+            analyzeBtn: !!analyzeBtn
+        });
+        
         const closeModal = () => {
-            modal.remove();
+            console.log('[LogsMode] Closing console modal');
+            if (modal && modal.parentNode) {
+                modal.remove();
+            }
         };
         
-        closeBtn.onclick = closeModal;
-        closeFooterBtn.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) closeModal();
-        };
+        // Add event listeners with proper error handling
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Close button clicked');
+                closeModal();
+            });
+        }
         
-        analyzeBtn.onclick = async () => {
-            await this.analyzeConsoleLog(logData, analyzeBtn);
-        };
+        if (closeFooterBtn) {
+            closeFooterBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Footer close button clicked');
+                closeModal();
+            });
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    console.log('[LogsMode] Modal overlay clicked');
+                    closeModal();
+                }
+            });
+        }
+        
+        if (analyzeBtn) {
+            analyzeBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Analyze button clicked');
+                try {
+                    await this.analyzeConsoleLog(logData, analyzeBtn);
+                } catch (error) {
+                    console.error('[LogsMode] Error in analyze button:', error);
+                }
+            });
+        }
+        
+        // Ensure modal is visible and clickable
+        if (modal) {
+            modal.style.zIndex = '10000';
+            modal.style.pointerEvents = 'auto';
+        }
+        
+        console.log('[LogsMode] Modal setup complete');
     }
     
     async analyzeConsoleLog(logData, analyzeBtn) {
@@ -364,28 +415,48 @@ class LogsMode {
         resultsDiv.classList.remove('hidden');
         
         try {
-            // Use the existing AI analyzer endpoint
-            const response = await fetch('/cicd/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    console_log: logData.console_log,
-                    job_name: logData.job_name,
-                    build_number: logData.build_number,
-                    user_id: 'system'
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success && data.analysis) {
-                this.displayAnalysisResults(data.analysis, resultsDiv);
+            // Use builds/<id>/analyze when we can match a saved build; otherwise fallback to direct analyzer
+            let response, data;
+            if (this.selectedBuild && this.selectedBuild.id) {
+                console.log('[LogsMode] analyzeConsoleLog: using build analyze endpoint for build id', this.selectedBuild.id);
+                response = await fetch(`/cicd/builds/${this.selectedBuild.id}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jenkins_config_id: this.currentJenkinsConfig ? parseInt(this.currentJenkinsConfig) : undefined,
+                        ansible_config_id: this.currentAnsibleConfig ? parseInt(this.currentAnsibleConfig) : undefined
+                    })
+                });
+                data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Analyze request failed');
             } else {
-                resultsDiv.innerHTML = `<div class="error">Analysis failed: ${data.error || 'Unknown error'}</div>`;
+                console.log('[LogsMode] analyzeConsoleLog: no build id; using direct analyzer endpoint');
+                response = await fetch('/cicd/analyze/console', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        console_log: logData.console_log,
+                        job_name: logData.job_name,
+                        build_number: logData.build_number,
+                        jenkins_config_id: this.currentJenkinsConfig ? parseInt(this.currentJenkinsConfig) : undefined,
+                        user_id: 'system'
+                    })
+                });
+                data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Analyze request failed');
+            }
+            
+            // Normalize analysis payload
+            const analysis = data.analysis || data;
+            if (analysis && (analysis.success === undefined || analysis.success === true)) {
+                this.displayAnalysisResults(analysis, resultsDiv);
+            } else {
+                resultsDiv.innerHTML = `<div class=\"error\">Analysis failed: ${analysis.error || data.error || 'Unknown error'}</div>`;
             }
             
         } catch (error) {
-            resultsDiv.innerHTML = `<div class="error">Error analyzing console: ${error.message}</div>`;
+            console.error('[LogsMode] analyzeConsoleLog error:', error);
+            resultsDiv.innerHTML = `<div class=\"error\">Error analyzing console: ${error.message}</div>`;
         } finally {
             window.setButtonLoading(analyzeBtn, false);
         }
