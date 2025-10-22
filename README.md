@@ -86,6 +86,49 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8080/ssh/test' -Method Post -Body (Conv
 
 - `DELETE /ssh/delete/<profile_id>` — delete a saved profile and any associated secrets.
 
+## CI/CD Jenkins Integration (Logs Mode)
+
+Use the Logs mode to analyze Jenkins build logs and get AI fix suggestions.
+
+### UI workflow
+1. Click the Logs tab in the header.
+2. Click Configure next to Jenkins and enter:
+   - Name, Base URL, Username
+   - API Token (required), Password (optional)
+3. After a successful save, the Jenkins dropdown will list your configuration(s).
+4. Paste a Jenkins console URL (ends with `/console`) and click Analyze Console.
+5. In the popup:
+   - Close with the X or Close button
+   - Click Analyze & Suggest Fix to run AI analysis
+
+### Backend endpoints
+- POST /cicd/jenkins/connect
+  - Body: { name, base_url, username, api_token, password?, user_id }
+  - Stores secrets securely; tests the connection before saving
+- GET /cicd/jenkins/configs?user_id=system
+  - Lists saved Jenkins configurations
+- POST /cicd/jenkins/console
+  - Body: { console_url, jenkins_config_id? }
+  - Parses job/build and returns console text (auth-aware if config id provided)
+- POST /cicd/analyze/console
+  - Body: { console_log, job_name, build_number, jenkins_config_id? }
+  - Runs AI error analysis on raw console text
+- GET /cicd/builds?jenkins_config_id=ID&server_name=&limit=20
+  - Fetches recent builds and stores them locally
+- GET /cicd/builds/{id}/logs?jenkins_config_id=ID&lines=200
+  - Returns tail of console log for a stored build
+- POST /cicd/builds/{id}/analyze
+  - Runs AI analysis for a stored build
+
+### Troubleshooting
+- Dropdown shows blank/empty:
+  - Check GET /cicd/jenkins/configs?user_id=system returns 200 with configs
+  - If 500, restart server to apply DB migration (adds api_token_secret_id) and check logs
+- Console popup buttons unresponsive:
+  - Fixed with delegated handlers in `frontend/js/logs-mode.js` and higher z-index
+- Jenkins auth issues on logs fetch:
+  - Backend logs now show whether auth header is present and HTTP error details
+
 ## Notes about recent frontend fixes
 
 I updated `frontend/js/profiles.js` to address three UI problems reported:
