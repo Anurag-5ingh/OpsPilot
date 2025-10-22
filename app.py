@@ -1654,6 +1654,73 @@ def execute_fix_commands():
         logger.error(f"Failed to execute fix commands: {e}")
         return jsonify({"error": "Failed to execute fix commands"}), 500
 
+@app.route("/cicd/analyze/console", methods=["POST"])
+def analyze_console_direct():
+    """Analyze a raw console log payload (no build ID required)."""
+    try:
+        data = request.get_json() or {}
+        console_log = data.get('console_log')
+        job_name = data.get('job_name', 'Unknown Job')
+        build_number = data.get('build_number', 0)
+        jenkins_config_id = data.get('jenkins_config_id')
+        
+        if not console_log:
+            return jsonify({"error": "console_log is required"}), 400
+        
+        # Create a temporary BuildLog-like object for analysis context
+        tmp_build = BuildLog(
+            job_name=job_name,
+            build_number=build_number,
+            status='FAILURE',
+            duration=None,
+            started_at=None,
+            jenkins_url=None,
+            target_server=None,
+            console_log_url=None
+        )
+        tmp_build.id = None
+        
+        # Optionally create JenkinsService if config provided (not used to fetch logs here)
+        jenkins_service = None
+        if jenkins_config_id:
+            config = JenkinsConfig.get_by_id(int(jenkins_config_id))
+            if config:
+                jenkins_service = JenkinsService(config)
+        
+        try:
+            analyzer = cicd_analyzer  # AILogAnalyzer already initialized in module
+            # Bypass fetching logs; pass text directly into AI analyzer path
+            # We'll reuse its private methods via a small shim
+            quick = analyzer._quick_error_analysis(console_log)  # type: ignore
+            ai_analysis = analyzer._ai_analyze_logs(  # type: ignore
+                job_name=job_name,
+                build_number=build_number,
+                console_log=console_log,
+                target_server=None,
+                quick_analysis=quick
+            )
+            suggestions = analyzer._generate_fix_suggestions(  # type: ignore
+                ai_analysis, tmp_build, console_log, None
+            )
+            result = {
+                'success': True,
+                'job_name': job_name,
+                'build_number': build_number,
+                'error_summary': ai_analysis.get('error_summary', 'Build failed'),
+                'root_cause': ai_analysis.get('root_cause', ''),
+                'suggested_commands': suggestions.get('commands', []),
+                'suggested_playbook': suggestions.get('playbook'),
+                'confidence': ai_analysis.get('confidence_score', 0.5)
+            }
+            return jsonify({'success': True, 'analysis': result}), 200
+        finally:
+            if jenkins_service:
+                jenkins_service.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to analyze console directly: {e}")
+        return jsonify({"error": "Failed to analyze console"}), 500
+
 @app.route("/cicd/jenkins/configs", methods=["GET"])
 def list_jenkins_configs():
     """List Jenkins configurations for a user."""
