@@ -14,6 +14,12 @@ class LogsMode {
         this.selectedBuild = null;
         this.currentAnalysis = null;
         
+        // Install global modal handlers once
+        if (!window.__logsConsoleModalHandlersInstalled) {
+            this._installGlobalConsoleModalHandlers();
+            window.__logsConsoleModalHandlersInstalled = true;
+        }
+        
         this.initializeUI();
         this.loadConfigurations();
     }
@@ -143,15 +149,20 @@ class LogsMode {
         const select = document.getElementById('jenkins-config-select');
         if (!select) return;
         
-        // Clear existing options except first
+        // Clear existing options and set a helpful default
         select.innerHTML = '<option value="">Select Jenkins...</option>';
         
-        configs.forEach(config => {
-            const option = document.createElement('option');
-            option.value = config.id;
-            option.textContent = `${config.name} (${config.base_url})`;
-            select.appendChild(option);
-        });
+        if (Array.isArray(configs) && configs.length > 0) {
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = `${config.name} (${config.base_url})`;
+                select.appendChild(option);
+            });
+        } else {
+            // Keep default only
+            console.warn('[LogsMode] No Jenkins configs found for dropdown');
+        }
         
         // Add delete button next to selector if not present
         let delBtn = document.getElementById('delete-jenkins-config-btn');
@@ -270,10 +281,9 @@ class LogsMode {
             const response = await fetch('/cicd/jenkins/console', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
+                body: JSON.stringify({
                     console_url: consoleUrl,
-                    jenkins_config_id: this.currentJenkinsConfig,
-                    user_id: 'system'
+                    jenkins_config_id: this.currentJenkinsConfig
                 })
             });
             
@@ -290,16 +300,7 @@ body: JSON.stringify({
                 
                 showToast(`Fetched console for ${data.job_name} #${data.build_number}`, 'success');
             } else {
-                const reason = data.error_type ? `${data.error} (type: ${data.error_type})` : (data.error || 'Unknown error');
-                const suggestion = data.suggestion ? `\nSuggestion: ${data.suggestion}` : '';
-                window.appendMessage(`Failed to fetch console: ${reason}${suggestion}`, 'system');
-                // Show modal with error details so user understands next steps
-                this.showConsoleLogModal({
-                    job_name: data.job_name || 'Unknown',
-                    build_number: data.build_number || '?',
-                    console_log: `Failed to fetch console log.\nReason: ${reason}${suggestion}\n\nEnsure a Jenkins configuration with valid API token is selected.`,
-                    original_url: consoleUrl
-                });
+                showToast(`Failed to fetch console: ${data.error}`, 'error');
             }
             
         } catch (error) {
@@ -309,7 +310,44 @@ body: JSON.stringify({
         }
     }
     
+    _installGlobalConsoleModalHandlers() {
+        document.addEventListener('click', async (e) => {
+            const target = e.target;
+            if (!target) return;
+            // Close handlers (X and footer Close)
+            if (target.id === 'console-modal-close' || target.id === 'console-close-btn' || target.closest('#console-modal-close') || target.closest('#console-close-btn')) {
+                const modal = document.getElementById('console-log-modal');
+                if (modal) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    modal.remove();
+                }
+                return;
+            }
+            // Analyze handler
+            if (target.id === 'analyze-console-btn' || target.closest('#analyze-console-btn')) {
+                const modal = document.getElementById('console-log-modal');
+                if (!modal) return;
+                const payloadStr = modal.dataset && modal.dataset.logPayload;
+                if (!payloadStr) return;
+                try {
+                    const payload = JSON.parse(payloadStr);
+                    const analyzeBtn = document.getElementById('analyze-console-btn');
+                    if (analyzeBtn && window.logsMode && typeof window.logsMode.analyzeConsoleLog === 'function') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await window.logsMode.analyzeConsoleLog(payload, analyzeBtn);
+                    }
+                } catch (err) {
+                    console.error('[LogsMode] Failed to parse modal payload:', err);
+                }
+            }
+        }, true);
+    }
+
     showConsoleLogModal(logData) {
+        console.log('[LogsMode] showConsoleLogModal: creating modal for', logData.job_name, '#' + logData.build_number);
+        
         const modalHTML = `
             <div class="modal-overlay" id="console-log-modal">
                 <div class="modal-content large">
@@ -324,7 +362,7 @@ body: JSON.stringify({
                             <div><strong>Source:</strong> <a href="${logData.original_url}" target="_blank">View in Jenkins</a></div>
                         </div>
                         <div class="console-log">
-<pre id=\"console-output\">${this.escapeHtml(logData.console_log || 'No console log returned. Ensure a Jenkins configuration is selected and accessible.')}</pre>
+                            <pre id="console-output">${this.escapeHtml(logData.console_log)}</pre>
                         </div>
                         <div class="console-actions">
                             <button id="analyze-console-btn" class="primary-btn">
@@ -345,31 +383,87 @@ body: JSON.stringify({
         
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         
-        // Setup event listeners
+        // Setup event listeners with proper error handling and logging
         const modal = document.getElementById('console-log-modal');
+        if (modal) {
+            // Attach minimal payload for delegated handlers
+            try {
+                modal.dataset.logPayload = JSON.stringify({
+                    job_name: logData.job_name,
+                    build_number: logData.build_number,
+                    console_log: logData.console_log
+                });
+            } catch (err) {
+                console.warn('[LogsMode] Failed to attach modal payload', err);
+            }
+        }
         const closeBtn = document.getElementById('console-modal-close');
         const closeFooterBtn = document.getElementById('console-close-btn');
         const analyzeBtn = document.getElementById('analyze-console-btn');
         
+        console.log('[LogsMode] Modal elements found:', {
+            modal: !!modal,
+            closeBtn: !!closeBtn,
+            closeFooterBtn: !!closeFooterBtn,
+            analyzeBtn: !!analyzeBtn
+        });
+        
         const closeModal = () => {
-            modal.remove();
+            console.log('[LogsMode] Closing console modal');
+            if (modal && modal.parentNode) {
+                modal.remove();
+            }
         };
         
-        closeBtn.onclick = closeModal;
-        closeFooterBtn.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) closeModal();
-        };
-        
-        // Disable analyze if we have no console content
-        if (!logData.console_log || !logData.console_log.trim()) {
-            analyzeBtn.disabled = true;
-            analyzeBtn.title = 'No console log available to analyze';
-        } else {
-            analyzeBtn.onclick = async () => {
-                await this.analyzeConsoleLog(logData, analyzeBtn);
-            };
+        // Add event listeners with proper error handling
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Close button clicked');
+                closeModal();
+            });
         }
+        
+        if (closeFooterBtn) {
+            closeFooterBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Footer close button clicked');
+                closeModal();
+            });
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    console.log('[LogsMode] Modal overlay clicked');
+                    closeModal();
+                }
+            });
+        }
+        
+        if (analyzeBtn) {
+            analyzeBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[LogsMode] Analyze button clicked');
+                try {
+                    await this.analyzeConsoleLog(logData, analyzeBtn);
+                } catch (error) {
+                    console.error('[LogsMode] Error in analyze button:', error);
+                }
+            });
+        }
+        
+        // Ensure modal is visible and clickable
+        if (modal) {
+            // Raise above any other overlays
+            modal.style.zIndex = '10050';
+            modal.style.pointerEvents = 'auto';
+        }
+        
+        console.log('[LogsMode] Modal setup complete');
     }
     
     async analyzeConsoleLog(logData, analyzeBtn) {
@@ -380,28 +474,48 @@ body: JSON.stringify({
         resultsDiv.classList.remove('hidden');
         
         try {
-            // Use the existing AI analyzer endpoint
-            const response = await fetch('/cicd/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-                    console_log: logData.console_log,
-                    job_name: logData.job_name,
-                    build_number: logData.build_number,
-                    ansible_config_id: this.currentAnsibleConfig || null
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success && data.analysis) {
-                this.displayAnalysisResults(data.analysis, resultsDiv);
+            // Use builds/<id>/analyze when we can match a saved build; otherwise fallback to direct analyzer
+            let response, data;
+            if (this.selectedBuild && this.selectedBuild.id) {
+                console.log('[LogsMode] analyzeConsoleLog: using build analyze endpoint for build id', this.selectedBuild.id);
+                response = await fetch(`/cicd/builds/${this.selectedBuild.id}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jenkins_config_id: this.currentJenkinsConfig ? parseInt(this.currentJenkinsConfig) : undefined,
+                        ansible_config_id: this.currentAnsibleConfig ? parseInt(this.currentAnsibleConfig) : undefined
+                    })
+                });
+                data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Analyze request failed');
             } else {
-                resultsDiv.innerHTML = `<div class="error">Analysis failed: ${data.error || 'Unknown error'}</div>`;
+                console.log('[LogsMode] analyzeConsoleLog: no build id; using direct analyzer endpoint');
+                response = await fetch('/cicd/analyze/console', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        console_log: logData.console_log,
+                        job_name: logData.job_name,
+                        build_number: logData.build_number,
+                        jenkins_config_id: this.currentJenkinsConfig ? parseInt(this.currentJenkinsConfig) : undefined,
+                        user_id: 'system'
+                    })
+                });
+                data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Analyze request failed');
+            }
+            
+            // Normalize analysis payload
+            const analysis = data.analysis || data;
+            if (analysis && (analysis.success === undefined || analysis.success === true)) {
+                this.displayAnalysisResults(analysis, resultsDiv);
+            } else {
+                resultsDiv.innerHTML = `<div class=\"error\">Analysis failed: ${analysis.error || data.error || 'Unknown error'}</div>`;
             }
             
         } catch (error) {
-            resultsDiv.innerHTML = `<div class="error">Error analyzing console: ${error.message}</div>`;
+            console.error('[LogsMode] analyzeConsoleLog error:', error);
+            resultsDiv.innerHTML = `<div class=\"error\">Error analyzing console: ${error.message}</div>`;
         } finally {
             window.setButtonLoading(analyzeBtn, false);
         }
@@ -842,8 +956,19 @@ body: JSON.stringify({
             try {
                 console.log('[LogsMode] Jenkins save payload (redacted):', { name, baseUrl, username, apiToken: !!apiToken, password: !!password });
                 if (typeof showToast === 'function') showToast('Saving Jenkins configuration…', 'info');
-                await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
-                closeModal();
+                const result = await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
+                if (result && result.success) {
+                    // Ensure the new config is selected in the dropdown
+                    const select = document.getElementById('jenkins-config-select');
+                    if (select && result.config_id) {
+                        select.value = String(result.config_id);
+                        this.currentJenkinsConfig = String(result.config_id);
+                    }
+                    closeModal();
+                } else {
+                    // Do not close modal if save failed
+                    if (typeof showToast === 'function') showToast(result && result.error ? result.error : 'Failed to save Jenkins configuration', 'error');
+                }
             } catch (error) {
                 console.error('Error saving Jenkins config:', error);
                 if (typeof showToast === 'function') {
@@ -1009,13 +1134,18 @@ body: JSON.stringify({
             
             if (data.success) {
                 showToast(`Jenkins configuration '${name}' saved`, 'success');
-                await this.loadConfigurations(); // Reload configs
+                await this.loadConfigurations(); // Reload configs so dropdown reflects new item
+                return { success: true, config_id: data.config_id };
             } else {
-                showToast(`Failed to save Jenkins config: ${data.error}`, 'error');
+                const err = data.error || 'Failed to save Jenkins config';
+                showToast(`Failed to save Jenkins config: ${err}`, 'error');
+                return { success: false, error: err };
             }
             
         } catch (error) {
-            showToast(`Error saving Jenkins config: ${error.message}`, 'error');
+            const errMsg = `Error saving Jenkins config: ${error.message}`;
+            showToast(errMsg, 'error');
+            return { success: false, error: errMsg };
         }
     }
     
