@@ -897,8 +897,19 @@ class LogsMode {
             try {
                 console.log('[LogsMode] Jenkins save payload (redacted):', { name, baseUrl, username, apiToken: !!apiToken, password: !!password });
                 if (typeof showToast === 'function') showToast('Saving Jenkins configuration…', 'info');
-                await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
-                closeModal();
+                const result = await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
+                if (result && result.success) {
+                    // Ensure the new config is selected in the dropdown
+                    const select = document.getElementById('jenkins-config-select');
+                    if (select && result.config_id) {
+                        select.value = String(result.config_id);
+                        this.currentJenkinsConfig = String(result.config_id);
+                    }
+                    closeModal();
+                } else {
+                    // Do not close modal if save failed
+                    if (typeof showToast === 'function') showToast(result && result.error ? result.error : 'Failed to save Jenkins configuration', 'error');
+                }
             } catch (error) {
                 console.error('Error saving Jenkins config:', error);
                 if (typeof showToast === 'function') {
@@ -1064,13 +1075,18 @@ class LogsMode {
             
             if (data.success) {
                 showToast(`Jenkins configuration '${name}' saved`, 'success');
-                await this.loadConfigurations(); // Reload configs
+                await this.loadConfigurations(); // Reload configs so dropdown reflects new item
+                return { success: true, config_id: data.config_id };
             } else {
-                showToast(`Failed to save Jenkins config: ${data.error}`, 'error');
+                const err = data.error || 'Failed to save Jenkins config';
+                showToast(`Failed to save Jenkins config: ${err}`, 'error');
+                return { success: false, error: err };
             }
             
         } catch (error) {
-            showToast(`Error saving Jenkins config: ${error.message}`, 'error');
+            const errMsg = `Error saving Jenkins config: ${error.message}`;
+            showToast(errMsg, 'error');
+            return { success: false, error: errMsg };
         }
     }
     
