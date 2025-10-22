@@ -1730,14 +1730,16 @@ def list_jenkins_configs():
             return jsonify({"error": "user_id is required"}), 400
         
         configs = JenkinsConfig.get_by_user(user_id)
+        logger.info("Listing Jenkins configs: user_id=%s count=%s", user_id, len(configs))
         return jsonify({
             "success": True,
             "configs": [config.to_dict() for config in configs]
         }), 200
         
     except Exception as e:
-        logger.error(f"Failed to list Jenkins configs: {e}")
-        return jsonify({"error": "Failed to list Jenkins configurations"}), 500
+        import traceback
+        logger.error(f"Failed to list Jenkins configs: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to list Jenkins configurations: {str(e)}"}), 500
 
 @app.route("/cicd/ansible/configs", methods=["GET"])
 def list_ansible_configs():
