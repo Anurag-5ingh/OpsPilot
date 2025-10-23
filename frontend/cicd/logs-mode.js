@@ -341,10 +341,6 @@ class LogsMode {
     }
 
     showConsoleLogModal(logData) {
-<<<<<<<< HEAD:frontend/shared/js/logsMode.js
-========
-        
->>>>>>>> local:frontend/cicd/logs-mode.js
         const modalHTML = `
             <div class="modal-overlay" id="console-log-modal">
                 <div class="modal-content large">
@@ -397,11 +393,6 @@ class LogsMode {
         const closeBtn = document.getElementById('console-modal-close');
         const closeFooterBtn = document.getElementById('console-close-btn');
         const analyzeBtn = document.getElementById('analyze-console-btn');
-        
-<<<<<<<< HEAD:frontend/shared/js/logsMode.js
-========
-        
->>>>>>>> local:frontend/cicd/logs-mode.js
         const closeModal = () => {
             if (modal && modal.parentNode) {
                 modal.remove();
@@ -1157,4 +1148,12 @@ document.addEventListener('DOMContentLoaded', () => {
         window.logsMode = logsMode;
     }, 100);
 });
+
+// Namespacing shim for modularity (non-breaking)
+(function(){
+  try {
+    window.Modules = window.Modules || {};
+    window.Modules.CICD = { LogsMode };
+  } catch (_) { /* ignore if window not available */ }
+})();
 

@@ -358,6 +358,23 @@ function executeAlternative(command) {
   executeCommand(command);
 }
 
+// Namespacing shim for modularity (non-breaking)
+(function(){
+  try {
+    window.Modules = window.Modules || {};
+    window.Modules.Command = {
+      showConfirmButtons,
+      createConfirmationButtons,
+      showRiskWarning,
+      submitPrompt,
+      executeCommand,
+      executeAlternative,
+      reconnectTerminal,
+      copyCommandToClipboard
+    };
+  } catch (_) { /* ignore if window not available */ }
+})();
+
 /**
  * Copy command to clipboard
  */

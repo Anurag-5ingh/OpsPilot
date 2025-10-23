@@ -318,6 +318,13 @@
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Load modular JavaScript files -->
+  <!-- Core (must load before shared/feature modules) -->
+  <script src="core/constants.js"></script>
+  <script src="core/logger.js"></script>
+  <script src="core/events.js"></script>
+  <script src="core/dom.js"></script>
+  <script src="core/storage.js"></script>
+  <script src="core/api.js"></script>
   <script src="shared/js/utils.js"></script>
   <script src="terminal/terminal.js"></script>
   <script src="shared/js/profiles.js"></script>

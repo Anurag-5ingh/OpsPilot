@@ -175,3 +175,16 @@ function submitTroubleshoot() {
  */
 
 /* ORIGINAL content copied from troubleshoot-mode.js */
+
+// Namespacing shim for modularity (non-breaking)
+(function(){
+  try {
+    window.Modules = window.Modules || {};
+    window.Modules.Troubleshoot = {
+      submitTroubleshoot,
+      executeTroubleshootStep,
+      appendTroubleshootPlan,
+      showTroubleshootButtons
+    };
+  } catch (_) { /* ignore if window not available */ }
+})();

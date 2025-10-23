@@ -54,7 +54,10 @@ function setupLoginListeners() {
       }
     });
 
-    connectBtn.addEventListener("click", connectSSH);
+    const connectHandler = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.connectSSH === 'function')
+      ? window.Modules.Terminal.connectSSH
+      : (typeof connectSSH === 'function' ? connectSSH : null);
+    if (connectHandler) connectBtn.addEventListener("click", connectHandler);
   }
 }
 
@@ -74,7 +77,10 @@ function setupCommandModeListeners() {
 
   const askBtn = document.getElementById("ask");
   if (askBtn) {
-    askBtn.addEventListener("click", submitPrompt);
+    const submitHandler = (window.Modules && window.Modules.Command && typeof window.Modules.Command.submitPrompt === 'function')
+      ? window.Modules.Command.submitPrompt
+      : (typeof submitPrompt === 'function' ? submitPrompt : null);
+    if (submitHandler) askBtn.addEventListener("click", submitHandler);
   }
 }
 
@@ -84,7 +90,10 @@ function setupCommandModeListeners() {
 function setupTroubleshootModeListeners() {
   const troubleshootBtn = document.getElementById("troubleshoot-btn");
   if (troubleshootBtn) {
-    troubleshootBtn.addEventListener("click", submitTroubleshoot);
+    const tHandler = (window.Modules && window.Modules.Troubleshoot && typeof window.Modules.Troubleshoot.submitTroubleshoot === 'function')
+      ? window.Modules.Troubleshoot.submitTroubleshoot
+      : (typeof submitTroubleshoot === 'function' ? submitTroubleshoot : null);
+    if (tHandler) troubleshootBtn.addEventListener("click", tHandler);
   }
 
   const errorInput = document.getElementById("error-input");
@@ -104,12 +113,18 @@ function setupTroubleshootModeListeners() {
 function setupTerminalControlListeners() {
   const clearBtn = document.getElementById("clear-terminal");
   if (clearBtn) {
-    clearBtn.addEventListener("click", clearTerminal);
+    const clearHandler = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.clearTerminal === 'function')
+      ? window.Modules.Terminal.clearTerminal
+      : (typeof clearTerminal === 'function' ? clearTerminal : null);
+    if (clearHandler) clearBtn.addEventListener("click", clearHandler);
   }
 
   const reconnectBtn = document.getElementById("reconnect-terminal");
   if (reconnectBtn) {
-    reconnectBtn.addEventListener("click", reconnectTerminal);
+    const reconnectHandler = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.reconnectTerminal === 'function')
+      ? window.Modules.Terminal.reconnectTerminal
+      : (typeof reconnectTerminal === 'function' ? reconnectTerminal : null);
+    if (reconnectHandler) reconnectBtn.addEventListener("click", reconnectHandler);
   }
 
   // Back from full-screen terminal to chat UI
@@ -161,8 +176,11 @@ function setupTerminalToggle() {
       right.classList.remove('collapsed');
       right.classList.add('full');
       left.classList.add('hidden');
-      if (typeof initializeTerminal === 'function' && !window.__terminalInitialized) {
-        initializeTerminal();
+      const initTerm = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.initializeTerminal === 'function')
+        ? window.Modules.Terminal.initializeTerminal
+        : (typeof initializeTerminal === 'function' ? initializeTerminal : null);
+      if (initTerm && !window.__terminalInitialized) {
+        initTerm();
         window.__terminalInitialized = true;
       }
     } else {
