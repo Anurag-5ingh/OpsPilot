@@ -120,6 +120,19 @@ function reconnectTerminal() {
   }
 }
 
+// Namespacing shim for modularity (non-breaking)
+(function(){
+  try {
+    window.Modules = window.Modules || {};
+    window.Modules.Terminal = {
+      initializeTerminal,
+      clearTerminal,
+      reconnectTerminal,
+      connectSSH
+    };
+  } catch (_) { /* ignore if window not available */ }
+})();
+
 /**
  * Connect to SSH server
  */

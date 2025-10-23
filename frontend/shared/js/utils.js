@@ -121,19 +121,10 @@ function toggleMode(mode) {
  */
 async function profileServer(host, username, port = 22, forceRefresh = false, password = "") {
   try {
-    const response = await fetch("/profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        host: host,
-        username: username,
-        port: port,
-        force_refresh: forceRefresh,
-        password: password
-      })
-    });
-
-    const result = await response.json();
+    const payload = { host: host, username: username, port: port, force_refresh: forceRefresh, password: password };
+    const result = (window.Core && window.Core.api && window.Core.api.post)
+      ? await window.Core.api.post("/profile", payload)
+      : await (await fetch("/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
     
     if (result.success) {
       state.serverProfile = result.profile;
@@ -176,8 +167,9 @@ function showSystemSummary(summary) {
  */
 async function getCommandSuggestions(category) {
   try {
-    const response = await fetch(`/profile/suggestions/${category}`);
-    const result = await response.json();
+    const result = (window.Core && window.Core.api && window.Core.api.get)
+      ? await window.Core.api.get(`/profile/suggestions/${category}`)
+      : await (await fetch(`/profile/suggestions/${category}`)).json();
     return result.suggestions || [];
   } catch (error) {
     console.error("Error getting suggestions:", error);
@@ -215,15 +207,20 @@ function updateSystemAwarenessUI() {
  * Toast notifications
  */
 function showToast(message, type = 'info', duration = 3500) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  // Clear previous toasts if error to keep latest only
-  if (type === 'error') container.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = message;
-  container.appendChild(el);
-  setTimeout(() => el.remove(), duration);
+  if (window.Core && window.Core.dom && typeof window.Core.dom.toast === 'function') {
+    window.Core.dom.toast(message, type, duration);
+    return;
+  }
+  try {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    if (type === 'error') container.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+  } catch (_) {}
 }
 
 // Export for use in other modules
