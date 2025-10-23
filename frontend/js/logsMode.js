@@ -93,7 +93,6 @@ class LogsMode {
     }
     
     setupEventListeners() {
-        console.log('[LogsMode] setupEventListeners: binding handlers');
         // Note: Configure buttons are wired via inline onclick in index.html (openJenkinsConfigModal/openAnsibleConfigModal)
         // Avoid attaching duplicate handlers here to prevent multiple modals.
         
@@ -255,8 +254,7 @@ class LogsMode {
             this.currentAnsibleConfig = configs[0].id;
         }
     }
-    
-    
+
     async fetchConsoleFromUrl() {
         const consoleUrlInput = document.getElementById('console-url-input');
         const fetchBtn = document.getElementById('fetch-console-btn');
@@ -309,7 +307,7 @@ class LogsMode {
             window.setButtonLoading(fetchBtn, false);
         }
     }
-    
+
     _installGlobalConsoleModalHandlers() {
         document.addEventListener('click', async (e) => {
             const target = e.target;
@@ -346,8 +344,6 @@ class LogsMode {
     }
 
     showConsoleLogModal(logData) {
-        console.log('[LogsMode] showConsoleLogModal: creating modal for', logData.job_name, '#' + logData.build_number);
-        
         const modalHTML = `
             <div class="modal-overlay" id="console-log-modal">
                 <div class="modal-content large">
@@ -401,15 +397,7 @@ class LogsMode {
         const closeFooterBtn = document.getElementById('console-close-btn');
         const analyzeBtn = document.getElementById('analyze-console-btn');
         
-        console.log('[LogsMode] Modal elements found:', {
-            modal: !!modal,
-            closeBtn: !!closeBtn,
-            closeFooterBtn: !!closeFooterBtn,
-            analyzeBtn: !!analyzeBtn
-        });
-        
         const closeModal = () => {
-            console.log('[LogsMode] Closing console modal');
             if (modal && modal.parentNode) {
                 modal.remove();
             }
@@ -420,7 +408,6 @@ class LogsMode {
             closeBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[LogsMode] Close button clicked');
                 closeModal();
             });
         }
@@ -429,7 +416,6 @@ class LogsMode {
             closeFooterBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[LogsMode] Footer close button clicked');
                 closeModal();
             });
         }
@@ -437,7 +423,6 @@ class LogsMode {
         if (modal) {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
-                    console.log('[LogsMode] Modal overlay clicked');
                     closeModal();
                 }
             });
@@ -447,7 +432,6 @@ class LogsMode {
             analyzeBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[LogsMode] Analyze button clicked');
                 try {
                     await this.analyzeConsoleLog(logData, analyzeBtn);
                 } catch (error) {
@@ -477,7 +461,6 @@ class LogsMode {
             // Use builds/<id>/analyze when we can match a saved build; otherwise fallback to direct analyzer
             let response, data;
             if (this.selectedBuild && this.selectedBuild.id) {
-                console.log('[LogsMode] analyzeConsoleLog: using build analyze endpoint for build id', this.selectedBuild.id);
                 response = await fetch(`/cicd/builds/${this.selectedBuild.id}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1248,3 +1231,4 @@ document.addEventListener('DOMContentLoaded', () => {
         window.logsMode = logsMode;
     }, 100);
 });
+

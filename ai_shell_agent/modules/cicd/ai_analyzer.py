@@ -225,38 +225,15 @@ class AILogAnalyzer:
                         target_server: Optional[str], quick_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Use AI to analyze build logs and identify root causes."""
         try:
-            # Prepare context for AI
-            error_context = f"""
-Jenkins Job: {job_name}#{build_number}
-Target Server: {target_server or 'Unknown'}
-Error Categories Found: {', '.join(quick_analysis.get('categories', []))}
-Key Error Lines:
-{chr(10).join(quick_analysis.get('error_lines', [])[:5])}
-
-Console Log (last part):
-{console_log[-2000:] if len(console_log) > 2000 else console_log}
-"""
-
-            # Create AI prompt for log analysis
-            analysis_prompt = f"""
-Analyze this Jenkins build failure and provide a structured analysis:
-
-{error_context}
-
-Please analyze this build failure and provide:
-1. A concise error summary (1-2 sentences)
-2. The most likely root cause
-3. Confidence score (0.0 to 1.0)
-4. Priority level (low/medium/high)
-
-Focus on actionable insights that could help fix the issue.
-"""
+            analysis_prompt = self._build_analysis_prompt(
+                job_name, build_number, console_log, target_server, quick_analysis
+            )
 
             # Use existing AI command generation with system context
             ai_result = ask_ai_for_command(
-                analysis_prompt, 
+                analysis_prompt,
                 memory=self.memory.get(),
-                system_context=self.system_context
+                system_context=self.system_context,
             )
             
             if not ai_result or not ai_result.get('success'):
@@ -300,6 +277,32 @@ Focus on actionable insights that could help fix the issue.
         except Exception as e:
             logger.error(f"Failed to parse AI analysis: {e}")
             return self._fallback_analysis(quick_analysis, "")
+
+    def _build_analysis_prompt(self, job_name: str, build_number: int, console_log: str,
+                               target_server: Optional[str], quick_analysis: Dict[str, Any]) -> str:
+        """Build the AI prompt for analyzing Jenkins build logs."""
+        error_context = (
+            f"Jenkins Job: {job_name}#{build_number}\n"
+            f"Target Server: {target_server or 'Unknown'}\n"
+            f"Error Categories Found: {', '.join(quick_analysis.get('categories', []))}\n"
+            "Key Error Lines:\n"
+            f"{chr(10).join(quick_analysis.get('error_lines', [])[:5])}\n\n"
+            "Console Log (last part):\n"
+            f"{console_log[-2000:] if len(console_log) > 2000 else console_log}\n"
+        )
+
+        analysis_prompt = (
+            "Analyze this Jenkins build failure and provide a structured analysis:\n\n"
+            f"{error_context}\n"
+            "Please analyze this build failure and provide:\n"
+            "1. A concise error summary (1-2 sentences)\n"
+            "2. The most likely root cause\n"
+            "3. Confidence score (0.0 to 1.0)\n"
+            "4. Priority level (low/medium/high)\n\n"
+            "Focus on actionable insights that could help fix the issue.\n"
+        )
+
+        return analysis_prompt
     
     def _fallback_analysis(self, quick_analysis: Dict[str, Any], console_log: str) -> Dict[str, Any]:
         """Provide fallback analysis when AI fails."""
@@ -340,47 +343,12 @@ Focus on actionable insights that could help fix the issue.
         try:
             error_summary = ai_analysis.get('error_summary', '')
             root_cause = ai_analysis.get('root_cause', '')
-            
-            # Generate command suggestions using AI
-            fix_prompt = f"""
-Based on this Jenkins build failure analysis, suggest specific shell commands to fix the issue:
-
-Job: {build_log.job_name}#{build_log.build_number}
-Target Server: {build_log.target_server or 'Unknown'}
-Error Summary: {error_summary}
-Root Cause: {root_cause}
-
-Generate 2-3 specific shell commands that could resolve this issue.
-Focus on:
-1. Commands that address the root cause
-2. Safe commands that won't harm the system  
-3. Commands appropriate for the target server
-
-Provide only the commands, one per line, without explanation.
-"""
-
             # Get command suggestions from AI
-            command_result = ask_ai_for_command(
-                fix_prompt,
-                memory=self.memory.get(),
-                system_context=self.system_context
+            command_result = self._ask_for_fix_commands(
+                build_log, error_summary, root_cause
             )
-            
-            suggested_commands = []
-            if command_result and command_result.get('success'):
-                ai_response = command_result.get('ai_response', {})
-                command_text = ai_response.get('final_command', '') or ai_response.get('response', '')
-                
-                # Extract individual commands
-                lines = command_text.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and not line.startswith('#') and not line.startswith('//'):
-                        # Clean up common prefixes
-                        line = re.sub(r'^\d+[\.\)]\s*', '', line)  # Remove "1. " or "1) "
-                        line = re.sub(r'^[-\*]\s*', '', line)      # Remove "- " or "* "
-                        if line:
-                            suggested_commands.append(line)
+
+            suggested_commands = self._parse_command_suggestions(command_result)
             
             # Fallback command suggestions based on error categories
             if not suggested_commands:
@@ -405,6 +373,51 @@ Provide only the commands, one per line, without explanation.
                 'commands': ['echo "Manual troubleshooting required - check build logs"'],
                 'playbook': None
             }
+
+    def _ask_for_fix_commands(self, build_log: BuildLog, error_summary: str, root_cause: str) -> Dict[str, Any]:
+        """Invoke AI to get command suggestions for fixing the build issue."""
+        fix_prompt = f"""
+Based on this Jenkins build failure analysis, suggest specific shell commands to fix the issue:
+
+Job: {build_log.job_name}#{build_log.build_number}
+Target Server: {build_log.target_server or 'Unknown'}
+Error Summary: {error_summary}
+Root Cause: {root_cause}
+
+Generate 2-3 specific shell commands that could resolve this issue.
+Focus on:
+1. Commands that address the root cause
+2. Safe commands that won't harm the system  
+3. Commands appropriate for the target server
+
+Provide only the commands, one per line, without explanation.
+"""
+
+        return ask_ai_for_command(
+            fix_prompt,
+            memory=self.memory.get(),
+            system_context=self.system_context,
+        )
+
+    def _parse_command_suggestions(self, command_result: Dict[str, Any]) -> List[str]:
+        """Parse AI returned command suggestions into a list of cleaned commands."""
+        suggested_commands: List[str] = []
+        if command_result and command_result.get('success'):
+            ai_response = command_result.get('ai_response', {})
+            command_text = ai_response.get('final_command', '') or ai_response.get('response', '')
+
+            # Extract individual commands
+            lines = command_text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#') and not line.startswith('//'):
+                    # Clean up common prefixes
+                    line = re.sub(r'^\d+[\.\)]\s*', '', line)  # Remove "1. " or "1) "
+                    line = re.sub(r'^[-\*]\s*', '', line)      # Remove "- " or "* "
+                    if line:
+                        suggested_commands.append(line)
+
+        return suggested_commands
     
     def _generate_fallback_commands(self, ai_analysis: Dict[str, Any], console_log: str) -> List[str]:
         """Generate fallback fix commands based on error patterns."""

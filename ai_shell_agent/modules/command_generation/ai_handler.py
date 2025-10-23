@@ -4,7 +4,8 @@ Generates single commands from natural language input with server awareness
 """
 import json
 from dotenv import load_dotenv
-from openai import OpenAI
+from ...utils.ai_client import get_openai_client
+from ...utils.ai_call import call_ai_chat
 from .prompts import get_system_prompt
 from .risk_analyzer import CommandRiskAnalyzer
 from .fallback_analyzer import CommandFallbackAnalyzer
@@ -13,26 +14,8 @@ from .ml_risk_scorer import MLRiskScorer
 # Load environment variables
 load_dotenv()
 
-# GPT-4o-mini client setup
-try:
-    client = OpenAI(
-        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-        api_key="dummy",
-        default_headers={
-            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-        }
-    )
-except TypeError:
-    # Fallback for older OpenAI library versions
-    import httpx
-    client = OpenAI(
-        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-        api_key="dummy",
-        default_headers={
-            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-        },
-        http_client=httpx.Client()
-    )
+# GPT-4o-mini client setup (centralized)
+client = get_openai_client()
 
 # Initialize analysis components
 risk_analyzer = CommandRiskAnalyzer()
@@ -96,19 +79,23 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
     messages.append({"role": "user", "content": user_input})
 
     try:
-        # Call GPT-4o-mini via Bosch internal endpoint
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
+        # Call GPT-4o-mini via centralized helper (handles JSON parsing/fallback)
+        call_result = call_ai_chat(
             messages=messages,
+            temperature=0.3,
             extra_query={"api-version": "2024-08-01-preview"},
-            temperature=0.3,  # Low temperature for consistent command generation
-            response_format={"type": "json_object"}  # Ensure structured JSON response
+            response_format={"type": "json_object"}
         )
 
-        content = response.choices[0].message.content.strip()
-        
-        # Parse JSON response from AI
-        ai_response = json.loads(content)
+        content = call_result.get('raw', '')
+        if call_result.get('parsed') is not None:
+            ai_response = call_result['parsed']
+        else:
+            # If parsing failed, attempt to fall back to raw content
+            try:
+                ai_response = json.loads(content) if content else {}
+            except Exception:
+                ai_response = {"final_command": content}
         
         # Ensure required 'final_command' field exists
         if "final_command" not in ai_response:
