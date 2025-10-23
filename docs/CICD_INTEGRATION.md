@@ -61,7 +61,7 @@ The CI/CD integration connects OpsPilot with Jenkins and Ansible to:
 
 ### Frontend Components
 
-#### 1. Logs Mode (`frontend/js/logs-mode.js`)
+#### 1. Logs Mode (`frontend/js/logsMode.js`)
 - New mode alongside Command and Troubleshoot
 - Configuration interface for Jenkins/Ansible
 - Build history table with status indicators

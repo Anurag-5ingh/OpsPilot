@@ -300,7 +300,7 @@ function handleCommandFailure(command, errorOutput) {
  * Show failure analysis with alternatives
  */
 function showFailureAnalysis(analysisData) {
-  const container = document.getElementById("chat-container");
+  const container = document.getElementById('chat-container');
   
   // Create failure analysis display
   const analysisDiv = document.createElement('div');
@@ -435,3 +435,9 @@ function submitPrompt() {
       appendMessage("Backend error.", "system");
     });
 }
+/*
+ * Command Generation Mode Module (renamed to camelCase)
+ * Copied from command-mode.js
+ */
+
+/* ORIGINAL content copied from command-mode.js */

@@ -125,7 +125,7 @@ Use the Logs mode to analyze Jenkins build logs and get AI fix suggestions.
   - Check GET /cicd/jenkins/configs?user_id=system returns 200 with configs
   - If 500, restart server to apply DB migration (adds api_token_secret_id) and check logs
 - Console popup buttons unresponsive:
-  - Fixed with delegated handlers in `frontend/js/logs-mode.js` and higher z-index
+  - Fixed with delegated handlers in `frontend/js/logsMode.js` and higher z-index
 - Jenkins auth issues on logs fetch:
   - Backend logs now show whether auth header is present and HTTP error details
 
@@ -541,8 +541,8 @@ OpsPilot/
 │   ├── js/                            # JavaScript Modules
 │   │   ├── main.js                    # Application entry point
 │   │   ├── utils.js                   # Shared utilities
-│   │   ├── command-mode.js            # Command generation UI
-│   │   ├── troubleshoot-mode.js       # Troubleshooting UI
+│   │   ├── commandMode.js            # Command generation UI
+│   │   ├── troubleshootMode.js       # Troubleshooting UI
 │   │   └── terminal.js                # SSH terminal
 │   ├── css/                           # Stylesheets
 │   │   └── main.css                   # Main stylesheet
@@ -870,8 +870,8 @@ ML Pipeline → Risk Assessment → Compliance Check → Response
 - **main.js** - Application entry point and event listeners
 - **utils.js** - Shared state and utilities
 - **terminal.js** - SSH terminal functionality  
-- **command-mode.js** - Command generation UI
-- **troubleshoot-mode.js** - Troubleshooting UI
+- **commandMode.js** - Command generation UI
+- **troubleshootMode.js** - Troubleshooting UI
 
 ## 🔧 **Enterprise Technology Stack**
 

@@ -1,34 +1,28 @@
-# OpsPilot Dependencies
-# Core Flask framework
+# Core Framework
 Flask==3.0.0
-
-# WebSocket support for real-time terminal
 Flask-SocketIO==5.3.6
-
-# Async execution support
 eventlet==0.33.3
 
-# SSH connectivity
+# SSH and Security
 paramiko==3.3.1
-
-# AI/OpenAI integration
-openai==1.3.7
-
-# Environment variables
-python-dotenv==1.0.0
-
-# Enhanced SSH Authentication
 keyring>=24.0.0
 cryptography>=41.0.0
 
-# Machine Learning dependencies
-scikit-learn==1.3.0
-numpy==1.24.4
-joblib==1.3.2
-pandas==2.0.3
+# AI Integration
+openai==1.3.7
 
-# CI/CD Integration dependencies
+# Environment and Utils
+python-dotenv==1.0.0
 requests>=2.25.0
 PyYAML>=6.0
+
+# Machine Learning (Risk Assessment)
+scikit-learn==1.3.0
+numpy==1.24.4
+pandas==2.0.3
+joblib==1.3.2
+psutil==5.9.5
+
+# CI/CD Integration
 GitPython>=3.1.0
 schedule>=1.2.0

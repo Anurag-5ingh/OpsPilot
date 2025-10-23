@@ -29,20 +29,48 @@ ENV/
 id_rsa
 id_ecdsa
 id_ed25519
+**/known_hosts
+**/ssh_profiles.json
 
-# Editors/OS
-vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/ci_runs.db
+data/ml_risk_database.db
+ml_risk_data.db
 
-# Node/Frontend
-node_modules/
-frontend/node_modules/
+# Logs and temporary files
+logs/
 *.log
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+temp/
+.temp/
+tmp/
+.tmp/
+cache/
+.cache/
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+~$*
+*.bak
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+**/dist/
+**/build/
+yarn.lock
+package-lock.json
 
 # Testing
 tests/
@@ -63,19 +91,29 @@ tests/playwright-report/
 tests/test-results/
 tests/.cache/
 tests/package-lock.json
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/playwright/.auth/
 
 # Test artifacts
 screenshots/
 videos/
 traces/
 
-# Misc
-*.swp
-*.swo
-~$*
+# Docker
+.docker/
+docker-compose.override.yml
 
-# Playwright
-/test-results/
-/playwright-report/
-/playwright/.cache/
-/playwright/.auth/
+# Local configuration files
+*.local
+*.local.*
+config.local.*
+
+# System files
+*.pid
+*.seed
+*.pid.lock
+
+# WSL
+*.wslconfig
