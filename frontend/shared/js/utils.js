@@ -18,6 +18,22 @@ const state = {
   systemAware: false
 };
 
+// Backwards-compatibility: expose legacy globals that proxy to state
+try {
+  Object.defineProperty(window, 'currentHost', {
+    get() { return state.currentHost; },
+    set(v) { state.currentHost = v; }
+  });
+  Object.defineProperty(window, 'currentUser', {
+    get() { return state.currentUser; },
+    set(v) { state.currentUser = v; }
+  });
+  Object.defineProperty(window, 'currentPassword', {
+    get() { return state.currentPassword; },
+    set(v) { state.currentPassword = v; }
+  });
+} catch (_) { /* no-op for non-browser envs */ }
+
 /**
  * Set button loading state
  */

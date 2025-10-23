@@ -1846,6 +1846,24 @@ def after_request(response):
 # Dictionary to store active SSH sessions by session ID
 ssh_sessions = {}
 
+# Small helpers to keep WebSocket handlers DRY
+def _emit_output(sid: str, text: str):
+    """Emit terminal output to a specific Socket.IO room."""
+    socketio.emit("terminal_output", {"output": text}, room=sid)
+
+def _cleanup_session(sid: str):
+    """Close SSH resources and remove session from registry."""
+    session = ssh_sessions.pop(sid, None)
+    if session:
+        try:
+            session["chan"].close()
+        except Exception:
+            pass
+        try:
+            session["client"].close()
+        except Exception:
+            pass
+
 # @app.route("/terminal")
 # def terminal():
 #     """
@@ -1882,31 +1900,22 @@ def _reader_thread(sid: str):
             # Read stdout data if available
             if chan.recv_ready():
                 data = chan.recv(4096).decode(errors="ignore")
-                socketio.emit("terminal_output", {"output": data}, room=sid)
+                _emit_output(sid, data)
             
             # Read stderr data if available
             if chan.recv_stderr_ready():
                 data = chan.recv_stderr(4096).decode(errors="ignore")
-                socketio.emit("terminal_output", {"output": data}, room=sid)
+                _emit_output(sid, data)
             
             # Small delay to prevent CPU spinning
             time.sleep(0.01)
             
     except Exception as e:
         # Send error message to client
-        socketio.emit("terminal_output", {"output": f"\r\n[reader error] {e}\r\n"}, room=sid)
+        _emit_output(sid, f"\r\n[reader error] {e}\r\n")
     finally:
         # Clean up session on thread exit
-        session = ssh_sessions.pop(sid, None)
-        if session:
-            try: 
-                session["chan"].close()
-            except Exception: 
-                pass
-            try: 
-                session["client"].close()
-            except Exception: 
-                pass
+        _cleanup_session(sid)
 
 @socketio.on("start_ssh")
 def start_ssh(data):
@@ -2084,17 +2093,7 @@ def on_disconnect():
     Clean up SSH session when WebSocket client disconnects.
     """
     sid = request.sid
-    session = ssh_sessions.pop(sid, None)
-    
-    if session:
-        try: 
-            session["chan"].close()
-        except Exception: 
-            pass
-        try: 
-            session["client"].close()
-        except Exception: 
-            pass
+    _cleanup_session(sid)
 
 # ===========================
 # Application Entry Point
