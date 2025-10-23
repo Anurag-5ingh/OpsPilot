@@ -3,18 +3,13 @@ AI Handler for Command Generation
 Generates single commands from natural language input with server awareness
 """
 import json
-from dotenv import load_dotenv
-from ...utils.ai_client import get_openai_client
-from ...utils.ai_call import call_ai_chat
 from .prompts import get_system_prompt
 from .risk_analyzer import CommandRiskAnalyzer
 from .fallback_analyzer import CommandFallbackAnalyzer
 from .ml_risk_scorer import MLRiskScorer
+from ai_shell_agent.modules.shared.ai_client import get_openai_client
 
-# Load environment variables
-load_dotenv()
-
-# GPT-4o-mini client setup (centralized)
+# GPT-4o-mini client setup via shared client
 client = get_openai_client()
 
 # Initialize analysis components
@@ -79,23 +74,19 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
     messages.append({"role": "user", "content": user_input})
 
     try:
-        # Call GPT-4o-mini via centralized helper (handles JSON parsing/fallback)
-        call_result = call_ai_chat(
+        # Call GPT-4o-mini via Bosch internal endpoint
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=messages,
-            temperature=0.3,
             extra_query={"api-version": "2024-08-01-preview"},
-            response_format={"type": "json_object"}
+            temperature=0.3,  # Low temperature for consistent command generation
+            response_format={"type": "json_object"}  # Ensure structured JSON response
         )
 
-        content = call_result.get('raw', '')
-        if call_result.get('parsed') is not None:
-            ai_response = call_result['parsed']
-        else:
-            # If parsing failed, attempt to fall back to raw content
-            try:
-                ai_response = json.loads(content) if content else {}
-            except Exception:
-                ai_response = {"final_command": content}
+        content = response.choices[0].message.content.strip()
+        
+        # Parse JSON response from AI
+        ai_response = json.loads(content)
         
         # Ensure required 'final_command' field exists
         if "final_command" not in ai_response:

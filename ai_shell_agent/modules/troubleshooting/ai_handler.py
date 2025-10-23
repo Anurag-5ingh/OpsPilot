@@ -3,16 +3,12 @@ AI Handler for Troubleshooting Module
 Handles error analysis and multi-step remediation
 """
 import json
-from dotenv import load_dotenv
-from ...utils.ai_client import get_openai_client
-from ...utils.ai_call import call_ai_chat
 from .prompts import get_troubleshoot_prompt
+from ai_shell_agent.modules.shared.ai_client import get_openai_client
 
-
-load_dotenv()
-
-# GPT-4o-mini client setup (centralized)
+# GPT-4o-mini client setup via shared client
 client = get_openai_client()
+
 
 def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list = None, system_context=None) -> dict:
     """
@@ -85,69 +81,86 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
     # Add current troubleshooting request
     messages.append({"role": "user", "content": user_message})
     
-    # Use centralized helper to call AI and parse JSON with fallback
-    call_result = call_ai_chat(
-        messages=messages,
-        temperature=0.2,
-        extra_query={"api-version": "2024-08-01-preview"},
-        response_format={"type": "json_object"}
-    )
-
-    content = call_result.get('raw', '')
-    parsed = call_result.get('parsed')
-    error = call_result.get('error')
-
-    if parsed is None:
-        # Attempt to fallback to parsing raw content if present
-        try:
-            parsed = json.loads(content) if content else None
-        except Exception as e:
-            # Return safe error structure for troubleshooting workflow
-            return {
-                "troubleshoot_response": {
-                    "analysis": "Failed to parse AI response",
-                    "diagnostic_commands": [],
-                    "fix_commands": [],
-                    "verification_commands": [],
-                    "reasoning": f"JSON parsing error: {str(e)}",
-                    "risk_level": "high",
-                    "requires_confirmation": True
-                },
-                "raw_output": content,
-                "success": False,
-                "error": str(e)
-            }
-
-    troubleshoot_response = parsed or {}
-
-    # Validate that essential troubleshooting fields are present
-    required_fields = ["analysis", "fix_commands", "verification_commands"]
-    missing_fields = [field for field in required_fields if field not in troubleshoot_response]
-
-    if missing_fields:
-        print(f"Warning: Missing required fields: {missing_fields}")
-        if "analysis" not in troubleshoot_response:
-            troubleshoot_response["analysis"] = "Unable to analyze error"
-        if "fix_commands" not in troubleshoot_response:
-            troubleshoot_response["fix_commands"] = []
-        if "verification_commands" not in troubleshoot_response:
-            troubleshoot_response["verification_commands"] = []
-
-    # Provide default values for optional troubleshooting fields
-    if "diagnostic_commands" not in troubleshoot_response:
-        troubleshoot_response["diagnostic_commands"] = []
-    if "reasoning" not in troubleshoot_response:
-        troubleshoot_response["reasoning"] = ""
-    if "risk_level" not in troubleshoot_response:
-        troubleshoot_response["risk_level"] = "medium"
-    if "requires_confirmation" not in troubleshoot_response:
-        troubleshoot_response["requires_confirmation"] = True
-
-    success = error is None
-
-    return {
-        "troubleshoot_response": troubleshoot_response,
-        "raw_output": content,
-        "success": success,
-        "error": error
-    }
+    try:
+        # Call GPT-4o-mini via Bosch internal endpoint for troubleshooting analysis
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            extra_query={"api-version": "2024-08-01-preview"},
+            temperature=0.2,  # Lower temperature for consistent, reliable troubleshooting
+            response_format={"type": "json_object"}  # Ensure structured JSON response
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # Parse structured JSON response from AI
+        troubleshoot_response = json.loads(content)
+        
+        # Validate that essential troubleshooting fields are present
+        required_fields = ["analysis", "fix_commands", "verification_commands"]
+        missing_fields = [field for field in required_fields if field not in troubleshoot_response]
+        
+        if missing_fields:
+            print(f"Warning: Missing required fields: {missing_fields}")
+            # Provide fallback values for missing required fields
+            if "analysis" not in troubleshoot_response:
+                troubleshoot_response["analysis"] = "Unable to analyze error"
+            if "fix_commands" not in troubleshoot_response:
+                troubleshoot_response["fix_commands"] = []
+            if "verification_commands" not in troubleshoot_response:
+                troubleshoot_response["verification_commands"] = []
+        
+        # Provide default values for optional troubleshooting fields
+        if "diagnostic_commands" not in troubleshoot_response:
+            troubleshoot_response["diagnostic_commands"] = []
+        if "reasoning" not in troubleshoot_response:
+            troubleshoot_response["reasoning"] = ""
+        if "risk_level" not in troubleshoot_response:
+            troubleshoot_response["risk_level"] = "medium"
+        if "requires_confirmation" not in troubleshoot_response:
+            troubleshoot_response["requires_confirmation"] = True
+        
+        return {
+            "troubleshoot_response": troubleshoot_response,
+            "raw_output": content,
+            "success": True
+        }
+    
+    except json.JSONDecodeError as e:
+        # Handle cases where AI returns invalid JSON or plain text
+        print(f"JSON parsing failed: {e}")
+        print(f"Raw response: {content}")
+        
+        # Return safe error structure for troubleshooting workflow
+        return {
+            "troubleshoot_response": {
+                "analysis": "Failed to parse AI response",
+                "diagnostic_commands": [],
+                "fix_commands": [],
+                "verification_commands": [],
+                "reasoning": f"JSON parsing error: {str(e)}",
+                "risk_level": "high",  # High risk due to parsing failure
+                "requires_confirmation": True
+            },
+            "raw_output": content,
+            "success": False,
+            "error": str(e)
+        }
+    
+    except Exception as e:
+        # Handle API failures, network issues, authentication problems
+        print(f"AI API call failed: {e}")
+        return {
+            "troubleshoot_response": {
+                "analysis": "AI service unavailable",
+                "diagnostic_commands": [],
+                "fix_commands": [],
+                "verification_commands": [],
+                "reasoning": f"API error: {str(e)}",
+                "risk_level": "high",  # High risk due to service failure
+                "requires_confirmation": True
+            },
+            "raw_output": "",
+            "success": False,
+            "error": str(e)
+        }
