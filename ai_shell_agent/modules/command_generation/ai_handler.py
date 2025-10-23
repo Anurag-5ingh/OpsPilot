@@ -3,36 +3,14 @@ AI Handler for Command Generation
 Generates single commands from natural language input with server awareness
 """
 import json
-from dotenv import load_dotenv
-from openai import OpenAI
 from .prompts import get_system_prompt
 from .risk_analyzer import CommandRiskAnalyzer
 from .fallback_analyzer import CommandFallbackAnalyzer
 from .ml_risk_scorer import MLRiskScorer
+from ai_shell_agent.modules.shared.ai_client import get_openai_client
 
-# Load environment variables
-load_dotenv()
-
-# GPT-4o-mini client setup
-try:
-    client = OpenAI(
-        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-        api_key="dummy",
-        default_headers={
-            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-        }
-    )
-except TypeError:
-    # Fallback for older OpenAI library versions
-    import httpx
-    client = OpenAI(
-        base_url="https://aoai-farm.bosch-temp.com/api/openai/deployments/askbosch-prod-farm-openai-gpt-4o-mini-2024-07-18",
-        api_key="dummy",
-        default_headers={
-            "genaiplatform-farm-subscription-key": "73620a9fe1d04540b9aabe89a2657a61",
-        },
-        http_client=httpx.Client()
-    )
+# GPT-4o-mini client setup via shared client
+client = get_openai_client()
 
 # Initialize analysis components
 risk_analyzer = CommandRiskAnalyzer()

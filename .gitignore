@@ -39,6 +39,7 @@ Thumbs.db
 # Node/Frontend
 node_modules/
 frontend/node_modules/
+frontend/package-lock.json
 *.log
 npm-debug.log*
 yarn-error.log*
@@ -79,3 +80,18 @@ traces/
 /playwright-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Project data and local artifacts
+data/
+db/
+temp/
+cache/
+logs/
+*.sqlite
+*.db
+
+# Legacy paths removed during frontend restructure
+# Keep these ignored to avoid reintroducing duplicates
+frontend/js/
+frontend/css/
+frontemd/

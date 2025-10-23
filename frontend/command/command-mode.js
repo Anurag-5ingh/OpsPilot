@@ -237,8 +237,7 @@ function executeCommand(command) {
     
     // Set up failure detection (simple timeout-based for now)
     setTimeout(() => {
-      // This could be enhanced with actual error detection from terminal output
-      // For now, this is a placeholder for the failure detection mechanism
+      // Placeholder for failure detection mechanism
     }, 5000);
     
   } else {

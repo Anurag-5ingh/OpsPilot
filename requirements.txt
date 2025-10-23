@@ -5,8 +5,8 @@ Flask==3.0.0
 # WebSocket support for real-time terminal
 Flask-SocketIO==5.3.6
 
-# Async execution support
-eventlet==0.33.3
+# Async execution support (not used; SocketIO runs in threading mode)
+# eventlet removed as unused
 
 # SSH connectivity
 paramiko==3.3.1
