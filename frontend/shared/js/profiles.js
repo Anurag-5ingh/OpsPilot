@@ -155,6 +155,7 @@ function updateProfilesList() {
 function updateProfileSelector() {
   const selector = document.getElementById('profile-select');
   const selectorContainer = document.getElementById('profile-selector');
+  const connectBtn = document.getElementById('connect-profile-btn');
   while (selector.children.length > 1) selector.removeChild(selector.lastChild);
   if (profiles.length > 0) {
     profiles.forEach(profile => {
@@ -163,10 +164,9 @@ function updateProfileSelector() {
       option.textContent = `${profile.name} (${profile.username}@${profile.host})`;
       selector.appendChild(option);
     });
-    selectorContainer.classList.remove('hidden');
-  } else {
-    selectorContainer.classList.add('hidden');
   }
+  selectorContainer.classList.remove('hidden');
+  if (connectBtn) connectBtn.disabled = profiles.length === 0;
 }
 
 function showProfilesModal() {
