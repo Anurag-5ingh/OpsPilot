@@ -166,14 +166,19 @@ function setupModeToggleListeners() {
     modeTerminalBtn.addEventListener("click", () => openTerminalFull());
   }
 
-  // Defensive: delegate clicks in case buttons are re-rendered
+  // Defensive: delegate clicks (works even if inner spans are clicked or elements re-render)
   document.addEventListener('click', (e) => {
-    const id = (e.target && e.target.id) || '';
-    if (id === 'mode-terminal') {
+    const btnTerminal = e.target.closest && e.target.closest('#mode-terminal');
+    const btnLogs = e.target.closest && e.target.closest('#mode-logs');
+    const btnChat = e.target.closest && e.target.closest('#mode-chat');
+    if (btnTerminal) {
+      e.preventDefault();
       openTerminalFull();
-    } else if (id === 'mode-logs') {
+    } else if (btnLogs) {
+      e.preventDefault();
       toggleMode('logs');
-    } else if (id === 'mode-chat') {
+    } else if (btnChat) {
+      e.preventDefault();
       toggleMode('command');
     }
   });
