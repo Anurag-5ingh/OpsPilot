@@ -91,16 +91,22 @@ function toggleMode(mode) {
 
   // Show selected bottom container and set active tab
   if (mode === 'command') {
+    // Ensure split for chat modes
+    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
     if (chatTab) chatTab.classList.add('active');
     if (commandContainer) commandContainer.classList.remove('hidden');
     const userInput = document.getElementById('user-input');
     if (userInput) userInput.focus();
   } else if (mode === 'troubleshoot') {
+    // Ensure split for chat modes
+    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
     if (chatTab) chatTab.classList.add('active');
     if (troubleshootContainer) troubleshootContainer.classList.remove('hidden');
     const errorInput = document.getElementById('error-input');
     if (errorInput) errorInput.focus();
   } else if (mode === 'logs') {
+    // Collapse split on logs
+    try { if (window.collapseTerminalSplit) window.collapseTerminalSplit(); } catch (_) {}
     if (logsTab) logsTab.classList.add('active');
     if (logsContainer) logsContainer.classList.remove('hidden');
   }
