@@ -165,6 +165,18 @@ function setupModeToggleListeners() {
   if (modeTerminalBtn) {
     modeTerminalBtn.addEventListener("click", () => openTerminalFull());
   }
+
+  // Defensive: delegate clicks in case buttons are re-rendered
+  document.addEventListener('click', (e) => {
+    const id = (e.target && e.target.id) || '';
+    if (id === 'mode-terminal') {
+      openTerminalFull();
+    } else if (id === 'mode-logs') {
+      toggleMode('logs');
+    } else if (id === 'mode-chat') {
+      toggleMode('command');
+    }
+  });
 }
 
 /**
@@ -188,23 +200,14 @@ function setupUnifiedModeSelect() {
 
 function setupTerminalToggle() {
   const btn = document.getElementById('toggle-terminal-btn');
-  const left = document.querySelector('.left-panel');
-  const right = document.getElementById('terminal-panel');
-  if (!btn || !left || !right) return;
+  if (!btn) return;
   btn.addEventListener('click', () => {
+    const left = document.querySelector('.left-panel');
+    const right = document.getElementById('terminal-panel');
+    if (!left || !right) return;
     const isCollapsed = right.classList.contains('collapsed');
     if (isCollapsed) {
-      // Expand to full-screen terminal
-      right.classList.remove('collapsed');
-      right.classList.add('full');
-      left.classList.add('hidden');
-      const initTerm = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.initializeTerminal === 'function')
-        ? window.Modules.Terminal.initializeTerminal
-        : (typeof initializeTerminal === 'function' ? initializeTerminal : null);
-      if (initTerm && !window.__terminalInitialized) {
-        initTerm();
-        window.__terminalInitialized = true;
-      }
+      openTerminalFull();
     } else {
       // Collapse terminal
       right.classList.add('collapsed');
