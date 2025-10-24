@@ -35,6 +35,34 @@ function initializeEventListeners() {
 
   // Split resizer for chat/terminal panels
   setupSplitResizer();
+
+  // If main screen is already visible (e.g., auto-login), ensure split is open
+  try {
+    const main = document.getElementById('main-screen');
+    if (main && !main.classList.contains('hidden')) {
+      openTerminalSplit();
+    } else if (main) {
+      // Observe visibility change to trigger split once when entering main screen
+      const obs = new MutationObserver(() => {
+        if (!main.classList.contains('hidden')) {
+          openTerminalSplit();
+          obs.disconnect();
+        }
+      });
+      obs.observe(main, { attributes: true, attributeFilter: ['class'] });
+    }
+  } catch (_) {}
+
+  // Keep terminal split state in sync with top-level modes
+  document.addEventListener('mode:changed', (evt) => {
+    const mode = (evt && evt.detail && evt.detail.mode) || 'command';
+    if (mode === 'logs') {
+      collapseTerminalSplit();
+    } else {
+      // command or troubleshoot (chat view)
+      openTerminalSplit();
+    }
+  });
 }
 
 /**
@@ -165,19 +193,14 @@ function setupModeToggleListeners() {
     modeLogsBtn.addEventListener("click", () => toggleMode("logs"));
   }
 
-  if (modeTerminalBtn) {
-    modeTerminalBtn.addEventListener("click", () => openTerminalSplit());
-  }
+  // Terminal tab removed; no handler needed
 
   // Defensive: delegate clicks (works even if inner spans are clicked or elements re-render)
   document.addEventListener('click', (e) => {
     const btnTerminal = e.target.closest && e.target.closest('#mode-terminal');
     const btnLogs = e.target.closest && e.target.closest('#mode-logs');
     const btnChat = e.target.closest && e.target.closest('#mode-chat');
-    if (btnTerminal) {
-      e.preventDefault();
-      openTerminalSplit();
-    } else if (btnLogs) {
+    if (btnLogs) {
       e.preventDefault();
       toggleMode('logs');
     } else if (btnChat) {
@@ -210,19 +233,10 @@ function setupTerminalToggle() {
   const btn = document.getElementById('toggle-terminal-btn');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    const left = document.querySelector('.left-panel');
     const right = document.getElementById('terminal-panel');
-    if (!left || !right) return;
+    if (!right) return;
     const isCollapsed = right.classList.contains('collapsed');
-    if (isCollapsed) {
-      openTerminalSplit();
-    } else {
-      // Collapse terminal
-      right.classList.add('collapsed');
-      right.classList.remove('full');
-      left.classList.remove('hidden');
-      left.classList.add('expanded');
-    }
+    if (isCollapsed) openTerminalSplit(); else collapseTerminalSplit();
   });
 }
 
@@ -230,11 +244,13 @@ function setupTerminalToggle() {
 function openTerminalFull() {
   const left = document.querySelector('.left-panel');
   const right = document.getElementById('terminal-panel');
+  const resizer = document.getElementById('split-resizer');
   if (!left || !right) return;
   right.classList.add('full');
   right.classList.remove('collapsed');
   left.classList.add('hidden');
   left.classList.remove('expanded');
+  if (resizer) resizer.classList.add('hidden');
   // Initialize terminal if needed
   const initTerm = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.initializeTerminal === 'function')
     ? window.Modules.Terminal.initializeTerminal
@@ -259,6 +275,7 @@ function openTerminalSplit() {
   right.classList.remove('full');
   left.classList.remove('hidden');
   left.classList.add('expanded');
+  resizer.classList.remove('hidden');
   // If widths are not set, set a default split 55/45
   if (!left.style.width && !right.style.width) {
     const container = document.querySelector('.split-container');
