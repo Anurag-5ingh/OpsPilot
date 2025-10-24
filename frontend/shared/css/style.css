@@ -133,6 +133,26 @@ body {
   border-top: 1px solid #e0e0e0;
 }
 
+.mode-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px 0 20px;
+}
+
+.mode-select-label {
+  color: #666;
+  font-size: 12px;
+}
+
+.mode-select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 13px;
+}
+
 .message {
   margin: 8px 0;
   padding: 8px;

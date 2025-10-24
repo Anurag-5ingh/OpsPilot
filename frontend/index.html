@@ -50,7 +50,7 @@
         <div class="chat-header">
           <img src="assets/brain.svg" alt="Brain Logo" class="brain-logo" />
           <span class="logo-text">opsPilot AI</span>
-          <div class="mode-toggle">
+          <div class="mode-toggle hidden">
             <button id="mode-command" class="mode-btn active">Command</button>
             <button id="mode-troubleshoot" class="mode-btn">Troubleshoot</button>
             <button id="mode-logs" class="mode-btn">Logs</button>
@@ -60,6 +60,15 @@
           </div>
         </div>
         <div id="chat-container"></div>
+
+        <!-- Unified Mode Selector (Command/Troubleshoot) -->
+        <div class="mode-select-row">
+          <label for="mode-select" class="mode-select-label">Mode</label>
+          <select id="mode-select" class="mode-select">
+            <option value="command" selected>Command</option>
+            <option value="troubleshoot">Troubleshoot</option>
+          </select>
+        </div>
         
         <!-- Command Mode Input (default) -->
         <div id="command-input-container" class="chat-input-container">
