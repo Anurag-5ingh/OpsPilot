@@ -436,7 +436,8 @@ function submitPrompt() {
         // Description line (comes from backend as concise action_text)
         const desc = document.createElement('p');
         desc.className = 'ai-command-desc';
-        const smartText = (commandData.action_text && commandData.action_text.trim()) ? commandData.action_text.trim() : `To ${prompt}`;
+        let smartText = (commandData.action_text && commandData.action_text.trim()) ? commandData.action_text.trim() : (prompt || '').trim();
+        if (smartText.toLowerCase().startsWith('to ')) smartText = smartText.slice(3);
         desc.textContent = smartText.endsWith(':') ? smartText : `${smartText}:`;
         block.appendChild(desc);
 
@@ -471,10 +472,7 @@ function submitPrompt() {
         container.appendChild(block);
         container.scrollTop = container.scrollHeight;
 
-        // Optional explanation
-        if (commandData.explanation) {
-          appendMessage(`💡 ${commandData.explanation}`, 'ai-explanation');
-        }
+        
 
         // Show confirmation with risk awareness
         showConfirmButtons(commandData);
