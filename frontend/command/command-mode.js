@@ -428,18 +428,55 @@ function submitPrompt() {
       if (data.ai_command || data.ai_response?.final_command) {
         const commandData = data.ai_response || { final_command: data.ai_command };
         state.currentCommand = commandData.final_command;
-        
-        // Display command with risk indicator
-        const riskLevel = commandData.risk_analysis?.risk_level || 'low';
-        const riskIcon = getRiskIcon(riskLevel).textContent;
-        
-        appendMessage(`${riskIcon} ${commandData.final_command}`, "ai");
-        
-        // Show explanation if available
+
+        // Container for description + code card
+        const container = document.getElementById('chat-container');
+
+        const block = document.createElement('div');
+        block.className = 'ai-command-block';
+
+        // Description line (e.g., "To pull remote updates:")
+        const desc = document.createElement('p');
+        desc.className = 'ai-command-desc';
+        desc.textContent = `To ${prompt}:`;
+        block.appendChild(desc);
+
+        // Code card with header and copy button
+        const card = document.createElement('div');
+        card.className = 'code-card';
+
+        const header = document.createElement('div');
+        header.className = 'code-card-header';
+        const lang = document.createElement('span');
+        lang.className = 'code-card-lang';
+        lang.textContent = 'bash';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'code-card-copy';
+        copyBtn.textContent = 'Copy code';
+        copyBtn.onclick = () => copyCommandToClipboard(commandData.final_command);
+        header.appendChild(lang);
+        header.appendChild(copyBtn);
+
+        const body = document.createElement('div');
+        body.className = 'code-card-body';
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = commandData.final_command;
+        pre.appendChild(code);
+        body.appendChild(pre);
+
+        card.appendChild(header);
+        card.appendChild(body);
+        block.appendChild(card);
+
+        container.appendChild(block);
+        container.scrollTop = container.scrollHeight;
+
+        // Optional explanation
         if (commandData.explanation) {
-          appendMessage(`💡 ${commandData.explanation}`, "ai-explanation");
+          appendMessage(`💡 ${commandData.explanation}`, 'ai-explanation');
         }
-        
+
         // Show confirmation with risk awareness
         showConfirmButtons(commandData);
       } else {
