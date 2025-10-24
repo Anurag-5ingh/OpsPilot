@@ -976,6 +976,10 @@ class LogsMode {
                     if (typeof showToast === 'function') showToast('Saving Jenkins configuration…', 'info');
                     const result = await this.saveJenkinsConfig(name, baseUrl, username, password, apiToken);
                     if (result && result.success) {
+                        // Refresh configurations to populate dropdown immediately
+                        try {
+                            await this.loadConfigurations();
+                        } catch (_) {}
                         const select = document.getElementById('jenkins-config-select');
                         if (select && result.config_id) {
                             select.value = String(result.config_id);
