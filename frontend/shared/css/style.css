@@ -153,6 +153,68 @@ body {
   font-family: 'Courier New', monospace;
 }
 
+.ai-command-block {
+  margin: 10px 0;
+}
+
+.ai-command-desc {
+  margin: 0 0 6px 0;
+  color: #333;
+  font-family: Arial, sans-serif;
+}
+
+.code-card {
+  background: #1e1e1e;
+  color: #eaeaea;
+  border-radius: 8px;
+  padding: 8px 8px 0 8px;
+}
+
+.code-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 0 6px;
+  color: #bdbdbd;
+  font-size: 12px;
+}
+
+.code-card-lang {
+  text-transform: lowercase;
+}
+
+.code-card-copy {
+  background: transparent;
+  color: #bdbdbd;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.code-card-copy:hover {
+  color: #fff;
+  border-color: #616161;
+}
+
+.code-card-body {
+  margin-top: 6px;
+  background: #111;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 240px;
+}
+
+.code-card-body pre {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  white-space: pre;
+  overflow: auto;
+}
+
 .message.system {
   background: #fff3e0;
   text-align: center;
