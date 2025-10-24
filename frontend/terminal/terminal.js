@@ -45,7 +45,7 @@ function initializeTerminal() {
   // Connect terminal to socket
   state.socket.on("connect", () => {
     clearTimeout(connectionTimeout);
-    appendMessage("🔄 Connecting to SSH server...", "system");
+    if (typeof showToast === 'function') showToast("Connecting to SSH server...", "info");
     
     state.socket.emit("start_ssh", {
       ip: state.currentHost,
@@ -56,19 +56,19 @@ function initializeTerminal() {
     // Set connection timeout
     connectionTimeout = setTimeout(() => {
       if (!state.terminalConnected) {
-        appendMessage("❌ Connection timeout. Please check your credentials and try again.", "system");
+        if (typeof showToast === 'function') showToast("Connection timeout. Please check your credentials and try again.", "error");
       }
     }, 10000);
   });
 
   state.socket.on("connect_error", (error) => {
     clearTimeout(connectionTimeout);
-    appendMessage(`❌ Connection failed: ${error.message}`, "system");
+    if (typeof showToast === 'function') showToast(`Connection failed: ${error.message}`, 'error');
   });
 
   // Auto re-authenticate on reconnects
   state.socket.on('reconnect', () => {
-    appendMessage("♻️ Reconnected to server. Restoring SSH session...", 'system');
+    if (typeof showToast === 'function') showToast("Reconnected. Restoring SSH session...", 'info');
     if (state.currentHost && state.currentUser) {
       state.socket.emit('start_ssh', {
         ip: state.currentHost,
@@ -81,7 +81,7 @@ function initializeTerminal() {
   // Handle disconnects and keep trying
   state.socket.on('disconnect', (reason) => {
     state.terminalConnected = false;
-    appendMessage(`⚠️ Terminal disconnected (${reason}). Will keep trying to reconnect...`, 'system');
+    if (typeof showToast === 'function') showToast(`Terminal disconnected (${reason}). Reconnecting...`, 'error');
     // If server forced disconnect, we must manually connect
     if (reason === 'io server disconnect' && state.socket && typeof state.socket.connect === 'function') {
       try { state.socket.connect(); } catch (_) {}
@@ -100,7 +100,9 @@ function initializeTerminal() {
       if (data.output.includes("Connected to")) {
         state.terminalConnected = true;
         clearTimeout(connectionTimeout);
-        appendMessage("✅ Terminal connected successfully!", "system");
+        if (typeof showToast === 'function') showToast("Terminal connected", 'success');
+        // Mark as initialized to prevent re-init on UI toggle
+        window.__terminalInitialized = true;
       }
     }
   });
