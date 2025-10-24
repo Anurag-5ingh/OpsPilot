@@ -69,50 +69,43 @@ function appendMessage(text, role) {
  */
 function toggleMode(mode) {
   state.currentMode = mode;
-  
-  const commandBtn = document.getElementById("mode-command");
-  const troubleshootBtn = document.getElementById("mode-troubleshoot");
-  const logsBtn = document.getElementById("mode-logs");
-  
+
+  const chatTab = document.getElementById("mode-chat");
+  const logsTab = document.getElementById("mode-logs");
+
   const commandContainer = document.getElementById("command-input-container");
   const troubleshootContainer = document.getElementById("troubleshoot-input-container");
   const logsContainer = document.getElementById("logs-input-container");
-  
-  // Remove active class from all mode buttons
-  [commandBtn, troubleshootBtn, logsBtn].forEach(btn => {
-    if (btn) btn.classList.remove("active");
-  });
-  
-  // Hide all input containers
+
+  // Remove active class from top tabs
+  [chatTab, logsTab].forEach(btn => { if (btn) btn.classList.remove("active"); });
+
+  // Keep chat stream visible for command and troubleshoot; hide only in logs
+  const chatStream = document.getElementById("chat-container");
+  if (chatStream) chatStream.classList.toggle('hidden', mode === 'logs');
+
+  // Hide all bottom input containers
   [commandContainer, troubleshootContainer, logsContainer].forEach(container => {
     if (container) container.classList.add("hidden");
   });
-  
-  // Hide chat stream in non-command modes
-  const chatStream = document.getElementById("chat-container");
-  if (chatStream) {
-    chatStream.classList.toggle('hidden', mode !== 'command');
-  }
 
-  // Show the selected mode
-  if (mode === "command" && commandBtn && commandContainer) {
-    commandBtn.classList.add("active");
-    commandContainer.classList.remove("hidden");
-    const userInput = document.getElementById("user-input");
+  // Show selected bottom container and set active tab
+  if (mode === 'command') {
+    if (chatTab) chatTab.classList.add('active');
+    if (commandContainer) commandContainer.classList.remove('hidden');
+    const userInput = document.getElementById('user-input');
     if (userInput) userInput.focus();
-  } else if (mode === "troubleshoot" && troubleshootBtn && troubleshootContainer) {
-    troubleshootBtn.classList.add("active");
-    troubleshootContainer.classList.remove("hidden");
-    const errorInput = document.getElementById("error-input");
+  } else if (mode === 'troubleshoot') {
+    if (chatTab) chatTab.classList.add('active');
+    if (troubleshootContainer) troubleshootContainer.classList.remove('hidden');
+    const errorInput = document.getElementById('error-input');
     if (errorInput) errorInput.focus();
-  } else if (mode === "logs" && logsBtn && logsContainer) {
-    logsBtn.classList.add("active");
-    logsContainer.classList.remove("hidden");
-    const serverInput = document.getElementById("server-name-input");
-    if (serverInput) serverInput.focus();
+  } else if (mode === 'logs') {
+    if (logsTab) logsTab.classList.add('active');
+    if (logsContainer) logsContainer.classList.remove('hidden');
   }
 
-  // Dispatch a custom event so modules can react to mode changes
+  // Notify listeners
   document.dispatchEvent(new CustomEvent('mode:changed', { detail: { mode } }));
 }
 
