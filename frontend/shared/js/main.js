@@ -29,6 +29,9 @@ function initializeEventListeners() {
 
   // Terminal toggle
   setupTerminalToggle();
+
+  // Unified mode selector
+  setupUnifiedModeSelect();
 }
 
 /**
@@ -162,6 +165,25 @@ function setupModeToggleListeners() {
   if (modeLogsBtn) {
     modeLogsBtn.addEventListener("click", () => toggleMode("logs"));
   }
+}
+
+/**
+ * Unified dropdown to switch modes (command/troubleshoot)
+ */
+function setupUnifiedModeSelect() {
+  const select = document.getElementById('mode-select');
+  if (!select) return;
+  // Initialize from current state
+  try { select.value = (window.state && window.state.currentMode) ? window.state.currentMode : 'command'; } catch (_) {}
+  select.addEventListener('change', (e) => {
+    const v = e.target.value === 'troubleshoot' ? 'troubleshoot' : 'command';
+    toggleMode(v);
+  });
+  // Keep dropdown in sync if mode changed elsewhere (e.g., header buttons)
+  document.addEventListener('mode:changed', (evt) => {
+    const mode = evt.detail && evt.detail.mode ? evt.detail.mode : 'command';
+    if (select.value !== mode) select.value = mode;
+  });
 }
 
 function setupTerminalToggle() {
