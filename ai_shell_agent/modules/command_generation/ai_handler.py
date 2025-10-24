@@ -112,25 +112,27 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
             })
         
         # Derive a concise action text for UI (short, precise)
+        import re
         action_text = None
         try:
-            expl = ai_response.get("explanation", "").strip()
-            if expl:
-                # Use the first sentence, normalize phrasing
-                first = expl.split(".")[0].strip()
-                # Replace leading pronouns for instructive tone
-                for lead in ["this command ", "the command ", "it "]:
-                    if first.lower().startswith(lead):
-                        first = first[len(lead):]
-                        break
-                action_text = f"To {first}" if not first.lower().startswith("to ") else first
-            else:
-                # Fallback to user input phrasing
-                cleaned = user_input.strip().rstrip('.')
-                action_text = f"To {cleaned}" if not cleaned.lower().startswith("to ") else cleaned
+            expl = (ai_response.get("explanation") or "").strip()
+            source = expl if expl else (user_input or "")
+            # Take first sentence
+            first = source.split(".")[0].strip()
+            # Drop patterns like: "use the ls command to ..."
+            first = re.sub(r"^\s*(use|using)\s+the\s+[a-z0-9_\-]+\s*(command)?\s+to\s+", "", first, flags=re.IGNORECASE)
+            # Remove generic leading phrases
+            for lead in ["to ", "this command ", "the command ", "it ", "this ", "that "]:
+                if first.lower().startswith(lead):
+                    first = first[len(lead):]
+                    break
+            # Remove explicit command mentions like: "the ls command"
+            first = re.sub(r"\bthe\s+[a-z0-9_\-]+\s+command\b", "", first, flags=re.IGNORECASE).strip()
+            # Final cleanup
+            first = first.rstrip('.')
+            action_text = first if first else None
         except Exception:
-            cleaned = user_input.strip().rstrip('.')
-            action_text = f"To {cleaned}" if cleaned else None
+            action_text = None
 
         if action_text:
             ai_response["action_text"] = action_text
