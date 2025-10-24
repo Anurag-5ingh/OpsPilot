@@ -32,6 +32,9 @@ function initializeEventListeners() {
 
   // Unified mode selector
   setupUnifiedModeSelect();
+
+  // Split resizer for chat/terminal panels
+  setupSplitResizer();
 }
 
 /**
@@ -163,7 +166,7 @@ function setupModeToggleListeners() {
   }
 
   if (modeTerminalBtn) {
-    modeTerminalBtn.addEventListener("click", () => openTerminalFull());
+    modeTerminalBtn.addEventListener("click", () => openTerminalSplit());
   }
 
   // Defensive: delegate clicks (works even if inner spans are clicked or elements re-render)
@@ -173,7 +176,7 @@ function setupModeToggleListeners() {
     const btnChat = e.target.closest && e.target.closest('#mode-chat');
     if (btnTerminal) {
       e.preventDefault();
-      openTerminalFull();
+      openTerminalSplit();
     } else if (btnLogs) {
       e.preventDefault();
       toggleMode('logs');
@@ -212,7 +215,7 @@ function setupTerminalToggle() {
     if (!left || !right) return;
     const isCollapsed = right.classList.contains('collapsed');
     if (isCollapsed) {
-      openTerminalFull();
+      openTerminalSplit();
     } else {
       // Collapse terminal
       right.classList.add('collapsed');
@@ -244,3 +247,84 @@ function openTerminalFull() {
 
 // Expose globally for inline onclick
 try { window.openTerminalFull = openTerminalFull; } catch (_) {}
+
+// Open terminal in split view (resizable side-by-side)
+function openTerminalSplit() {
+  const left = document.querySelector('.left-panel');
+  const right = document.getElementById('terminal-panel');
+  const resizer = document.getElementById('split-resizer');
+  if (!left || !right || !resizer) return;
+  // Ensure both panels visible
+  right.classList.remove('collapsed');
+  right.classList.remove('full');
+  left.classList.remove('hidden');
+  left.classList.add('expanded');
+  // If widths are not set, set a default split 55/45
+  if (!left.style.width && !right.style.width) {
+    const container = document.querySelector('.split-container');
+    const total = container ? container.clientWidth : window.innerWidth;
+    const leftWidth = Math.round(total * 0.55);
+    left.style.width = leftWidth + 'px';
+    right.style.width = (total - leftWidth - resizer.offsetWidth) + 'px';
+  }
+  // Initialize terminal if needed
+  const initTerm = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.initializeTerminal === 'function')
+    ? window.Modules.Terminal.initializeTerminal
+    : (typeof initializeTerminal === 'function' ? initializeTerminal : null);
+  if (initTerm && !window.__terminalInitialized) {
+    initTerm();
+    window.__terminalInitialized = true;
+  }
+}
+
+// Expose globally
+try { window.openTerminalSplit = openTerminalSplit; } catch (_) {}
+
+// Draggable vertical resizer between chat and terminal panels
+function setupSplitResizer() {
+  const resizer = document.getElementById('split-resizer');
+  const left = document.querySelector('.left-panel');
+  const right = document.getElementById('terminal-panel');
+  const container = document.querySelector('.split-container');
+  if (!resizer || !left || !right || !container) return;
+
+  let dragging = false;
+  let startX = 0;
+  let startLeftWidth = 0;
+
+  const minLeft = 240; // px
+  const minRight = 320; // px
+
+  resizer.addEventListener('mousedown', (e) => {
+    // Only enable if terminal is visible
+    if (right.classList.contains('collapsed')) return;
+    dragging = true;
+    startX = e.clientX;
+    startLeftWidth = left.getBoundingClientRect().width;
+    resizer.classList.add('active');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const containerWidth = container.getBoundingClientRect().width;
+    let newLeft = startLeftWidth + dx;
+    // Clamp
+    if (newLeft < minLeft) newLeft = minLeft;
+    if (containerWidth - newLeft - resizer.offsetWidth < minRight) {
+      newLeft = containerWidth - resizer.offsetWidth - minRight;
+    }
+    left.style.width = newLeft + 'px';
+    right.style.width = (containerWidth - newLeft - resizer.offsetWidth) + 'px';
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('active');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+}

@@ -80,6 +80,23 @@ body {
   height: 100vh;
 }
 
+/* Vertical resizer between left and right panels */
+#split-resizer.split-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: #e0e0e0;
+}
+
+#split-resizer.split-resizer:hover,
+#split-resizer.split-resizer.active {
+  background: #c8c8c8;
+}
+
+.right-panel.collapsed + #split-resizer,
+#split-resizer + .right-panel.collapsed {
+  display: none;
+}
+
 .left-panel {
   width: 50%;
   display: flex;
