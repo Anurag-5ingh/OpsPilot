@@ -11,10 +11,14 @@ function initializeTerminal() {
   const terminalContainer = document.getElementById('terminal-container');
   terminalContainer.innerHTML = '<div style="color: white; text-align: center; padding: 20px;">🔄 Initializing terminal...</div>';
   
-  // Initialize Socket.IO connection with timeout
+  // Initialize Socket.IO connection with robust reconnection
   state.socket = io({
-    timeout: 5000,
-    transports: ['websocket', 'polling']
+    timeout: 10000,
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
   });
   
   // Initialize xterm.js terminal with optimized settings
@@ -60,6 +64,28 @@ function initializeTerminal() {
   state.socket.on("connect_error", (error) => {
     clearTimeout(connectionTimeout);
     appendMessage(`❌ Connection failed: ${error.message}`, "system");
+  });
+
+  // Auto re-authenticate on reconnects
+  state.socket.on('reconnect', () => {
+    appendMessage("♻️ Reconnected to server. Restoring SSH session...", 'system');
+    if (state.currentHost && state.currentUser) {
+      state.socket.emit('start_ssh', {
+        ip: state.currentHost,
+        user: state.currentUser,
+        password: state.currentPassword || ""
+      });
+    }
+  });
+
+  // Handle disconnects and keep trying
+  state.socket.on('disconnect', (reason) => {
+    state.terminalConnected = false;
+    appendMessage(`⚠️ Terminal disconnected (${reason}). Will keep trying to reconnect...`, 'system');
+    // If server forced disconnect, we must manually connect
+    if (reason === 'io server disconnect' && state.socket && typeof state.socket.connect === 'function') {
+      try { state.socket.connect(); } catch (_) {}
+    }
   });
 
   state.terminal.onData(data => {
@@ -114,7 +140,7 @@ function reconnectTerminal() {
     state.socket.emit("start_ssh", {
       ip: state.currentHost,
       user: state.currentUser,
-      password: ""
+      password: state.currentPassword || ""
     });
     appendMessage("Reconnecting to terminal...", "system");
   }
