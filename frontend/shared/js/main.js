@@ -150,20 +150,20 @@ function setupTerminalControlListeners() {
  * Setup mode toggle listeners
  */
 function setupModeToggleListeners() {
-  const modeCommandBtn = document.getElementById("mode-command");
-  const modeTroubleshootBtn = document.getElementById("mode-troubleshoot");
+  const modeChatBtn = document.getElementById("mode-chat");
   const modeLogsBtn = document.getElementById("mode-logs");
-  
-  if (modeCommandBtn) {
-    modeCommandBtn.addEventListener("click", () => toggleMode("command"));
+  const modeTerminalBtn = document.getElementById("mode-terminal");
+
+  if (modeChatBtn) {
+    modeChatBtn.addEventListener("click", () => toggleMode("command"));
   }
-  
-  if (modeTroubleshootBtn) {
-    modeTroubleshootBtn.addEventListener("click", () => toggleMode("troubleshoot"));
-  }
-  
+
   if (modeLogsBtn) {
     modeLogsBtn.addEventListener("click", () => toggleMode("logs"));
+  }
+
+  if (modeTerminalBtn) {
+    modeTerminalBtn.addEventListener("click", () => openTerminalFull());
   }
 }
 
