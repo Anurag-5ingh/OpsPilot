@@ -222,3 +222,25 @@ function setupTerminalToggle() {
     }
   });
 }
+
+// Open terminal panel full-screen and initialize terminal once
+function openTerminalFull() {
+  const left = document.querySelector('.left-panel');
+  const right = document.getElementById('terminal-panel');
+  if (!left || !right) return;
+  right.classList.add('full');
+  right.classList.remove('collapsed');
+  left.classList.add('hidden');
+  left.classList.remove('expanded');
+  // Initialize terminal if needed
+  const initTerm = (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.initializeTerminal === 'function')
+    ? window.Modules.Terminal.initializeTerminal
+    : (typeof initializeTerminal === 'function' ? initializeTerminal : null);
+  if (initTerm && !window.__terminalInitialized) {
+    initTerm();
+    window.__terminalInitialized = true;
+  }
+}
+
+// Expose globally for inline onclick
+try { window.openTerminalFull = openTerminalFull; } catch (_) {}
