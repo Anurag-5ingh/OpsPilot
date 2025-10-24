@@ -45,7 +45,6 @@ function initializeTerminal() {
   // Connect terminal to socket
   state.socket.on("connect", () => {
     clearTimeout(connectionTimeout);
-    if (typeof showToast === 'function') showToast("Connecting to SSH server...", "info");
     
     state.socket.emit("start_ssh", {
       ip: state.currentHost,
@@ -82,6 +81,8 @@ function initializeTerminal() {
   state.socket.on('disconnect', (reason) => {
     state.terminalConnected = false;
     if (typeof showToast === 'function') showToast(`Terminal disconnected (${reason}). Reconnecting...`, 'error');
+    // Reset connected toast guard so next successful connect can show it once
+    window.__terminalConnectedToastShown = false;
     // If server forced disconnect, we must manually connect
     if (reason === 'io server disconnect' && state.socket && typeof state.socket.connect === 'function') {
       try { state.socket.connect(); } catch (_) {}
@@ -100,7 +101,10 @@ function initializeTerminal() {
       if (data.output.includes("Connected to")) {
         state.terminalConnected = true;
         clearTimeout(connectionTimeout);
-        if (typeof showToast === 'function') showToast("Terminal connected", 'success');
+        if (!window.__terminalConnectedToastShown && typeof showToast === 'function') {
+          showToast("Terminal connected", 'success');
+          window.__terminalConnectedToastShown = true;
+        }
         // Mark as initialized to prevent re-init on UI toggle
         window.__terminalInitialized = true;
       }

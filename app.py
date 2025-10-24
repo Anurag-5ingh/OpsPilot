@@ -142,6 +142,7 @@ def ask():
 
     return jsonify({
         "ai_command": command,
+        "ai_response": ai_response,
         "original_prompt": user_input
     })
 

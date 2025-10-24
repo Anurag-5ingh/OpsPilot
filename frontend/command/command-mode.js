@@ -216,7 +216,7 @@ function confirmCommand(choice, container, command) {
   container.remove();
 
   if (choice === "yes") {
-    appendMessage(`Executing: ${command}`, "system");
+    if (typeof showToast === 'function') showToast(`Executing: ${command}`, 'info');
     executeCommand(command);
   } else {
     appendMessage("Command execution cancelled.", "user");
@@ -380,9 +380,9 @@ function executeAlternative(command) {
  */
 function copyCommandToClipboard(command) {
   navigator.clipboard.writeText(command).then(() => {
-    appendMessage(`📋 Command copied to clipboard: ${command}`, 'system');
+    if (typeof showToast === 'function') showToast('Command copied to clipboard', 'success');
   }).catch(() => {
-    appendMessage(`📋 Copy failed. Command: ${command}`, 'system');
+    if (typeof showToast === 'function') showToast('Copy failed', 'error');
   });
 }
 
@@ -390,15 +390,13 @@ function copyCommandToClipboard(command) {
  * Reconnect terminal
  */
 function reconnectTerminal() {
-  appendMessage('🔄 Attempting to reconnect terminal...', 'system');
-  // This would trigger the terminal reconnection logic
-  // Implementation depends on existing terminal connection code
+  if (typeof showToast === 'function') showToast('Reconnecting terminal…', 'info');
+  if (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.reconnectTerminal === 'function') {
+    window.Modules.Terminal.reconnectTerminal();
+    return;
+  }
   if (state.socket) {
-    state.socket.emit('start_ssh', {
-      ip: state.currentHost,
-      user: state.currentUser,
-      password: state.currentPassword
-    });
+    state.socket.emit('start_ssh', { ip: state.currentHost, user: state.currentUser, password: state.currentPassword });
   }
 }
 
@@ -435,10 +433,11 @@ function submitPrompt() {
         const block = document.createElement('div');
         block.className = 'ai-command-block';
 
-        // Description line (e.g., "To pull remote updates:")
+        // Description line (comes from backend as concise action_text)
         const desc = document.createElement('p');
         desc.className = 'ai-command-desc';
-        desc.textContent = `To ${prompt}:`;
+        const smartText = (commandData.action_text && commandData.action_text.trim()) ? commandData.action_text.trim() : `To ${prompt}`;
+        desc.textContent = smartText.endsWith(':') ? smartText : `${smartText}:`;
         block.appendChild(desc);
 
         // Code card with header and copy button

@@ -111,6 +111,30 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
                 }
             })
         
+        # Derive a concise action text for UI (short, precise)
+        action_text = None
+        try:
+            expl = ai_response.get("explanation", "").strip()
+            if expl:
+                # Use the first sentence, normalize phrasing
+                first = expl.split(".")[0].strip()
+                # Replace leading pronouns for instructive tone
+                for lead in ["this command ", "the command ", "it "]:
+                    if first.lower().startswith(lead):
+                        first = first[len(lead):]
+                        break
+                action_text = f"To {first}" if not first.lower().startswith("to ") else first
+            else:
+                # Fallback to user input phrasing
+                cleaned = user_input.strip().rstrip('.')
+                action_text = f"To {cleaned}" if not cleaned.lower().startswith("to ") else cleaned
+        except Exception:
+            cleaned = user_input.strip().rstrip('.')
+            action_text = f"To {cleaned}" if cleaned else None
+
+        if action_text:
+            ai_response["action_text"] = action_text
+
         return {
             "ai_response": ai_response,
             "raw_ai_output": content
