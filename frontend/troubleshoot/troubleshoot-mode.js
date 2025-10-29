@@ -29,20 +29,7 @@ function appendTroubleshootPlan(plan) {
     diagDiv.innerHTML = `<strong>Diagnostic Commands:</strong><br>${plan.diagnostic_commands.map(cmd => `• ${cmd}`).join('<br>')}`;
     container.appendChild(diagDiv);
   }
-  
-  if (plan.fix_commands && plan.fix_commands.length > 0) {
-    const fixDiv = document.createElement("div");
-    fixDiv.className = "message ai troubleshoot-step";
-    fixDiv.innerHTML = `<strong>Fix Commands:</strong><br>${plan.fix_commands.map(cmd => `• ${cmd}`).join('<br>')}`;
-    container.appendChild(fixDiv);
-  }
-  
-  if (plan.verification_commands && plan.verification_commands.length > 0) {
-    const verifyDiv = document.createElement("div");
-    verifyDiv.className = "message ai troubleshoot-step";
-    verifyDiv.innerHTML = `<strong>Verification Commands:</strong><br>${plan.verification_commands.map(cmd => `• ${cmd}`).join('<br>')}`;
-    container.appendChild(verifyDiv);
-  }
+  // Initially, do NOT show fixes or verification steps; these will be suggested after diagnostics run
   
   container.scrollTop = container.scrollHeight;
 }
@@ -56,16 +43,11 @@ function showTroubleshootButtons(plan) {
     const diagBtn = document.createElement("button");
     diagBtn.textContent = "Run Diagnostics";
     diagBtn.className = "troubleshoot-action-btn";
-    diagBtn.onclick = () => executeTroubleshootStep("diagnostic", plan.diagnostic_commands, btnGroup);
+    diagBtn.onclick = () => startDiagnostics(plan, btnGroup);
     btnGroup.appendChild(diagBtn);
   }
-  
-  const fixBtn = document.createElement("button");
-  fixBtn.textContent = "Run Fixes";
-  fixBtn.className = "troubleshoot-action-btn";
-  fixBtn.onclick = () => executeTroubleshootStep("fix", plan.fix_commands, btnGroup);
-  btnGroup.appendChild(fixBtn);
-  
+  // Do NOT show fixes yet; only after diagnostics are analyzed
+
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = "Cancel";
   cancelBtn.className = "troubleshoot-cancel-btn";
@@ -105,17 +87,7 @@ function executeTroubleshootStep(stepType, commands, buttonContainer) {
           document.getElementById("chat-container").appendChild(resultDiv);
         });
       }
-      if (stepType === "diagnostic" && state.troubleshootPlan) {
-        appendMessage("Diagnostics complete. Ready to run fixes?", "system");
-        const fixBtnGroup = document.createElement('div');
-        fixBtnGroup.className = 'confirm-buttons';
-        const runFixBtn = document.createElement('button');
-        runFixBtn.textContent = 'Run Fixes';
-        runFixBtn.onclick = () => executeTroubleshootStep('fix', state.troubleshootPlan.fix_commands, fixBtnGroup);
-        const cancelBtn = document.createElement('button'); cancelBtn.textContent = 'Cancel'; cancelBtn.onclick = () => { appendMessage('Cancelled.', 'system'); fixBtnGroup.remove(); };
-        fixBtnGroup.append(runFixBtn, cancelBtn);
-        document.getElementById('chat-container').appendChild(fixBtnGroup);
-      }
+      // Note: iterative diagnostics use startDiagnostics; here we handle fix/verification
       if (stepType === "fix" && state.troubleshootPlan && state.troubleshootPlan.verification_commands.length > 0) {
         appendMessage("Fixes applied. Running verification...", "system");
         setTimeout(() => { executeTroubleshootStep("verification", state.troubleshootPlan.verification_commands, document.createElement("div")); }, 1000);
@@ -124,10 +96,112 @@ function executeTroubleshootStep(stepType, commands, buttonContainer) {
         const allSuccess = data.all_success;
         const statusMsg = allSuccess ? "✅ Troubleshooting complete! Issue resolved." : "⚠️ Verification failed. Issue may not be fully resolved.";
         appendMessage(statusMsg, "system");
+        // Simple iteration: if failed and we have not exceeded attempts, offer to re-run diagnostics
+        state.troubleshootAttempts = (state.troubleshootAttempts || 0) + 1;
+        if (!allSuccess && state.troubleshootAttempts < 3) {
+          const retryGroup = document.createElement('div');
+          retryGroup.className = 'confirm-buttons';
+          const retryBtn = document.createElement('button');
+          retryBtn.textContent = 'Re-run Diagnostics';
+          retryBtn.onclick = () => startDiagnostics(state.troubleshootPlan, retryGroup);
+          const cancelBtn = document.createElement('button');
+          cancelBtn.textContent = 'Stop';
+          cancelBtn.onclick = () => { appendMessage('Stopped after failed verification.', 'system'); retryGroup.remove(); };
+          retryGroup.append(retryBtn, cancelBtn);
+          document.getElementById('chat-container').appendChild(retryGroup);
+        } else if (!allSuccess) {
+          appendMessage('Reached maximum attempts. Consider providing more details or checking logs.', 'system');
+        }
       }
       document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
     })
     .catch(err => { appendMessage(`Error executing ${stepType}: ${err.message}`, "system"); });
+}
+
+// Iterative diagnostics: run one command at a time and analyze after each
+function startDiagnostics(plan, buttonContainer) {
+  appendMessage('Starting diagnostics...', 'system');
+  if (buttonContainer && typeof buttonContainer.remove === 'function') buttonContainer.remove();
+  const cmds = Array.isArray(plan.diagnostic_commands) ? plan.diagnostic_commands.slice() : [];
+  if (cmds.length === 0) { appendMessage('No diagnostic commands available.', 'system'); return; }
+  const outputs = [];
+
+  const runNext = () => {
+    if (cmds.length === 0) {
+      // Exhausted diagnostics; propose safe fixes if available
+      appendMessage('Diagnostics inconclusive. You may try fixes or provide more details.', 'ai');
+      return offerFixes(plan);
+    }
+    const cmd = cmds.shift();
+    const tmpGroup = document.createElement('div');
+    tmpGroup.className = 'hidden'; // not shown; just placeholder for API compat
+    fetch('/troubleshoot/execute', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands: [cmd], step_type: 'diagnostic', host: state.currentHost, username: state.currentUser, port: 22 })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const res = (data.results && data.results[0]) || { command: cmd, output: '', error: '' };
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'message system troubleshoot-result';
+        resultDiv.innerHTML = `
+          <strong>Command:</strong> ${res.command}<br>
+          <strong>Output:</strong> <pre>${res.output || '(no output)'}</pre>
+          ${res.error ? `<strong>Error:</strong> <pre>${res.error}</pre>` : ''}
+        `;
+        document.getElementById('chat-container').appendChild(resultDiv);
+        outputs.push((res.output || '') + '\n' + (res.error || ''));
+
+        // Analyze this step
+        const decision = analyzeDiagnostic(outputs.join('\n'));
+        if (decision.confident) {
+          appendMessage(`Diagnosis: ${decision.summary} Proceeding to propose fixes.`, 'ai');
+          return offerFixes(plan);
+        }
+        // Continue with next diagnostic
+        runNext();
+      })
+      .catch(err => {
+        appendMessage(`Diagnostic step error: ${err.message}`, 'system');
+        // Try next diagnostic even if one fails
+        runNext();
+      });
+  };
+
+  runNext();
+}
+
+function analyzeDiagnostic(text) {
+  const t = (text || '').toLowerCase();
+  const signals = [
+    { k: 'inactive', s: 'Service is inactive' },
+    { k: 'failed', s: 'Service failed' },
+    { k: 'not running', s: 'Service not running' },
+    { k: 'connection refused', s: 'Connection refused' },
+    { k: 'no space left', s: 'Disk full' },
+    { k: 'permission denied', s: 'Permission issue' },
+    { k: 'down', s: 'Service down' },
+    { k: 'error', s: 'Error detected' }
+  ];
+  const hit = signals.find(sig => t.includes(sig.k));
+  return { confident: !!hit, summary: hit ? hit.s : 'No definitive signal yet' };
+}
+
+function offerFixes(plan) {
+  if (!plan || !Array.isArray(plan.fix_commands) || plan.fix_commands.length === 0) {
+    appendMessage('No fix commands available from plan.', 'system');
+    return;
+  }
+  const fixBtnGroup = document.createElement('div');
+  fixBtnGroup.className = 'confirm-buttons';
+  const runFixBtn = document.createElement('button');
+  runFixBtn.textContent = 'Run Fixes';
+  runFixBtn.onclick = () => executeTroubleshootStep('fix', plan.fix_commands, fixBtnGroup);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => { appendMessage('Cancelled.', 'system'); fixBtnGroup.remove(); };
+  fixBtnGroup.append(runFixBtn, cancelBtn);
+  document.getElementById('chat-container').appendChild(fixBtnGroup);
 }
 
 function submitTroubleshoot() {
