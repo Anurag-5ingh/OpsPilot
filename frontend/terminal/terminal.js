@@ -35,9 +35,21 @@ function initializeTerminal() {
     macOptionIsMeta: true
   });
   
+  // Load fit addon if present so terminal fills container
+  let fitAddon = null;
+  try {
+    if (window.FitAddon && typeof window.FitAddon.FitAddon === 'function') {
+      fitAddon = new window.FitAddon.FitAddon();
+      state.terminal.loadAddon(fitAddon);
+      state.fitAddon = fitAddon;
+    }
+  } catch (_) {}
+
   // Clear loading indicator and open terminal
   terminalContainer.innerHTML = '';
   state.terminal.open(terminalContainer);
+  // Initial fit once opened
+  try { if (fitAddon) { fitAddon.fit(); } } catch (_) {}
   
   // Set up connection timeout
   let connectionTimeout;
@@ -107,6 +119,8 @@ function initializeTerminal() {
         }
         // Mark as initialized to prevent re-init on UI toggle
         window.__terminalInitialized = true;
+        // Ensure fit after connection banner to avoid hidden area
+        try { if (state.fitAddon) { state.fitAddon.fit(); } } catch (_) {}
       }
     }
   });
@@ -123,10 +137,25 @@ function initializeTerminal() {
       }
     }, 100);
   }
-  
+  // Expose for external triggers
+  try { state._sendResize = sendResize; } catch (_) {}
+
   state.terminal.onResize(sendResize);
-  setTimeout(sendResize, 200);
-  window.addEventListener('resize', sendResize);
+  setTimeout(() => { try { if (state.fitAddon) state.fitAddon.fit(); } catch(_){}; sendResize(); }, 200);
+  window.addEventListener('resize', () => { try { if (state.fitAddon) state.fitAddon.fit(); } catch(_){}; sendResize(); });
+
+  // Resize when container size changes (e.g., when split opens or user drags divider)
+  try {
+    const ro = new ResizeObserver(() => {
+      try { if (state.fitAddon) state.fitAddon.fit(); } catch(_){}
+      // Ask xterm to re-measure and then notify backend of new rows/cols
+      if (state.terminal && typeof state.terminal.refresh === 'function') {
+        state.terminal.refresh(0, state.terminal.rows - 1);
+      }
+      sendResize();
+    });
+    ro.observe(terminalContainer);
+  } catch (_) {}
 }
 
 /**
@@ -207,6 +236,9 @@ function connectSSH() {
         document.getElementById("login-screen").classList.add("hidden");
         document.getElementById("main-screen").classList.remove("hidden");
         
+        // Ensure terminal panel is visible before initializing (prevents wrong sizing)
+        try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
+
         // Initialize terminal
         initializeTerminal();
         
