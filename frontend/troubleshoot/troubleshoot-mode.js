@@ -3,6 +3,10 @@
  * Handles error analysis and multi-step remediation
  */
 
+// Initialize state
+window.state = window.state || {};
+state.troubleshootPlan = null;
+
 function appendTroubleshootPlan(plan) {
   const container = document.getElementById("chat-container");
   
