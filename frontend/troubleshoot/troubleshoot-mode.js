@@ -23,6 +23,29 @@ function appendTroubleshootPlan(plan) {
     container.appendChild(reasonDiv);
   }
 
+// Ensure terminal panel is visible and socket is connected (match Command mode behavior)
+async function ensureTerminalReady(timeoutMs = 5000) {
+  try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){ }
+  if (state && state.socket && state.socket.connected) return true;
+  // Attempt reconnect
+  try {
+    if (window.Modules && window.Modules.Terminal && typeof window.Modules.Terminal.reconnectTerminal === 'function') {
+      window.Modules.Terminal.reconnectTerminal();
+    } else if (state && state.socket && typeof state.socket.connect === 'function') {
+      state.socket.connect();
+    }
+  } catch(_){ }
+  // Wait for connection
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const iv = setInterval(() => {
+      const ok = state && state.socket && state.socket.connected;
+      if (ok) { clearInterval(iv); resolve(true); }
+      else if (Date.now() - start > timeoutMs) { clearInterval(iv); resolve(false); }
+    }, 150);
+  });
+}
+
 // Execute a single command in terminal and collect a short output snapshot
 async function runCommandInTerminal(command, idleMs = 800, maxMs = 5000) {
   return new Promise((resolve) => {
@@ -45,9 +68,16 @@ async function runCommandInTerminal(command, idleMs = 800, maxMs = 5000) {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(finish, idleMs);
     };
-    try { state.socket.on('terminal_output', onChunk); } catch(_){}
-    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
-    try { state.socket.emit('terminal_input', { input: command + "\n" }); } catch(_){}
+    try { state.socket.on('terminal_output', onChunk); } catch(_){ }
+    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){ }
+    // Use the exact same path as Command mode for execution when available
+    try {
+      if (window.Modules && window.Modules.Command && typeof window.Modules.Command.executeCommand === 'function') {
+        window.Modules.Command.executeCommand(command);
+      } else if (state && state.socket) {
+        state.socket.emit('terminal_input', { input: command + "\n" });
+      }
+    } catch(_){ }
     setTimeout(finish, maxMs);
   });
 }
@@ -119,6 +149,8 @@ function executeTroubleshootStep(stepType, commands, buttonContainer) {
   // Prefer terminal execution to show output in terminal; fallback to API if terminal not connected
   const canUseTerminal = state && state.socket && state.socket.connected && state.terminal;
   const runAllInTerminal = async () => {
+    const ready = await ensureTerminalReady();
+    if (!ready) throw new Error('Terminal not ready');
     try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
     const results = await runCommandsInTerminal(commands);
     // Summarize in chat (do not dump full output)
@@ -207,10 +239,10 @@ function startDiagnostics(plan, buttonContainer) {
     // Prefer terminal execution so outputs appear in terminal window
     const canUseTerminal = state && state.socket && state.socket.connected && state.terminal;
     const doOne = async () => {
-      try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
+      const ready = await ensureTerminalReady();
+      if (!ready) throw new Error('Terminal not ready');
+      try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){ }
       const res = await runCommandInTerminal(cmd);
-      // Post concise summary to chat
-      appendMessage(`Ran diagnostic: ${cmd}`, 'system');
       outputs.push(res.output || '');
       const decision = analyzeDiagnostic(outputs.join('\n'));
       if (decision.confident) {
