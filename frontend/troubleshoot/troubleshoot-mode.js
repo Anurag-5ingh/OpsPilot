@@ -319,15 +319,11 @@ function submitTroubleshoot() {
   input.value = "";
   setButtonLoading(troubleshootBtn, true);
   
-  fetch("/troubleshoot", {
+  fetch("/troubleshoot/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      error_text: errorText,
-      host: state.currentHost,
-      username: state.currentUser,
-      port: 22,
-      context: {}
+      error_text: errorText
     })
   })
     .then(res => res.json())
