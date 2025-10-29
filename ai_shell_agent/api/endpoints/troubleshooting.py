@@ -4,7 +4,7 @@ Troubleshooting endpoints for analyzing and fixing server issues.
 
 from flask import Blueprint, request, jsonify
 import logging
-from ..modules.troubleshooting.engine import TroubleshootingEngine
+from ai_shell_agent.modules.troubleshooting.engine import TroubleshootingEngine
 
 # Initialize logger
 logger = logging.getLogger(__name__)
