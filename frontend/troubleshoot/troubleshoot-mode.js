@@ -22,6 +22,60 @@ function appendTroubleshootPlan(plan) {
     reasonDiv.innerHTML = `<strong>Reasoning:</strong> ${plan.reasoning}`;
     container.appendChild(reasonDiv);
   }
+
+// Execute a single command in terminal and collect a short output snapshot
+async function runCommandInTerminal(command, idleMs = 800, maxMs = 5000) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let done = false;
+    let idleTimer = null;
+    const finish = () => {
+      if (done) return; done = true;
+      try { state.socket.off('terminal_output', onChunk); } catch(_){}
+      resolve({ command, output: chunks.join('') });
+    };
+    const onChunk = (data) => {
+      try {
+        if (data && typeof data.output === 'string') {
+          chunks.push(data.output);
+        } else if (typeof data === 'string') {
+          chunks.push(data);
+        }
+      } catch(_){}
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(finish, idleMs);
+    };
+    try { state.socket.on('terminal_output', onChunk); } catch(_){}
+    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
+    try { state.socket.emit('terminal_input', { input: command + "\n" }); } catch(_){}
+    setTimeout(finish, maxMs);
+  });
+}
+
+// Execute a list of commands sequentially in terminal
+async function runCommandsInTerminal(commands) {
+  const results = [];
+  for (const cmd of (commands || [])) {
+    const r = await runCommandInTerminal(cmd);
+    results.push(r);
+  }
+  return results;
+}
+
+function summarizeResults(results) {
+  if (!Array.isArray(results) || results.length === 0) return 'No output.';
+  const lines = [];
+  results.forEach(r => {
+    const out = (r.output || '').trim().split('\n').slice(-3).join(' ');
+    lines.push(`• ${r.command} → ${out ? out : '(no output)'}`);
+  });
+  return `Summary of results:\n${lines.join('\n')}`;
+}
+
+function verificationSucceeded(results) {
+  const all = (results || []).map(r => (r.output || '').toLowerCase()).join('\n');
+  return all.includes('active (running)') || all.includes('success') || all.includes('ok');
+}
   
   if (plan.diagnostic_commands && plan.diagnostic_commands.length > 0) {
     const diagDiv = document.createElement("div");
@@ -60,8 +114,50 @@ function showTroubleshootButtons(plan) {
 
 function executeTroubleshootStep(stepType, commands, buttonContainer) {
   appendMessage(`Executing ${stepType} commands...`, "system");
-  buttonContainer.remove();
-  
+  if (buttonContainer && typeof buttonContainer.remove === 'function') buttonContainer.remove();
+
+  // Prefer terminal execution to show output in terminal; fallback to API if terminal not connected
+  const canUseTerminal = state && state.socket && state.socket.connected && state.terminal;
+  const runAllInTerminal = async () => {
+    try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
+    const results = await runCommandsInTerminal(commands);
+    // Summarize in chat (do not dump full output)
+    const summary = summarizeResults(results);
+    appendMessage(summary, 'ai');
+    if (stepType === 'fix' && state.troubleshootPlan && state.troubleshootPlan.verification_commands.length > 0) {
+      appendMessage('Fixes applied. Running verification...', 'system');
+      setTimeout(() => executeTroubleshootStep('verification', state.troubleshootPlan.verification_commands, document.createElement('div')), 600);
+      return;
+    }
+    if (stepType === 'verification') {
+      const ok = verificationSucceeded(results);
+      const statusMsg = ok ? '✅ Troubleshooting complete! Issue resolved.' : '⚠️ Verification failed. Issue may not be fully resolved.';
+      appendMessage(statusMsg, 'system');
+      state.troubleshootAttempts = (state.troubleshootAttempts || 0) + 1;
+      if (!ok && state.troubleshootAttempts < 3) {
+        const retryGroup = document.createElement('div');
+        retryGroup.className = 'confirm-buttons';
+        const retryBtn = document.createElement('button');
+        retryBtn.textContent = 'Re-run Diagnostics';
+        retryBtn.onclick = () => startDiagnostics(state.troubleshootPlan, retryGroup);
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Stop';
+        cancelBtn.onclick = () => { appendMessage('Stopped after failed verification.', 'system'); retryGroup.remove(); };
+        retryGroup.append(retryBtn, cancelBtn);
+        document.getElementById('chat-container').appendChild(retryGroup);
+      } else if (!ok) {
+        appendMessage('Reached maximum attempts. Consider providing more details or checking logs.', 'system');
+      }
+    }
+    document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
+  };
+
+  if (canUseTerminal) {
+    runAllInTerminal().catch(err => appendMessage(`Terminal execution error: ${err.message}`, 'system'));
+    return;
+  }
+
+  // Fallback to API-based execution if terminal unavailable
   fetch("/troubleshoot/execute", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -75,43 +171,18 @@ function executeTroubleshootStep(stepType, commands, buttonContainer) {
   })
     .then(res => res.json())
     .then(data => {
-      if (data.results) {
-        data.results.forEach(result => {
-          const resultDiv = document.createElement("div");
-          resultDiv.className = "message system troubleshoot-result";
-          resultDiv.innerHTML = `
-            <strong>Command:</strong> ${result.command}<br>
-            <strong>Output:</strong> <pre>${result.output || '(no output)'}</pre>
-            ${result.error ? `<strong>Error:</strong> <pre>${result.error}</pre>` : ''}
-          `;
-          document.getElementById("chat-container").appendChild(resultDiv);
-        });
+      const results = (data && data.results) ? data.results.map(r => ({ command: r.command, output: (r.output || '') + (r.error ? ('\n' + r.error) : '') })) : [];
+      const summary = summarizeResults(results);
+      appendMessage(summary, 'ai');
+      if (stepType === 'fix' && state.troubleshootPlan && state.troubleshootPlan.verification_commands.length > 0) {
+        appendMessage('Fixes applied. Running verification...', 'system');
+        setTimeout(() => executeTroubleshootStep('verification', state.troubleshootPlan.verification_commands, document.createElement('div')), 600);
+        return;
       }
-      // Note: iterative diagnostics use startDiagnostics; here we handle fix/verification
-      if (stepType === "fix" && state.troubleshootPlan && state.troubleshootPlan.verification_commands.length > 0) {
-        appendMessage("Fixes applied. Running verification...", "system");
-        setTimeout(() => { executeTroubleshootStep("verification", state.troubleshootPlan.verification_commands, document.createElement("div")); }, 1000);
-      }
-      if (stepType === "verification") {
-        const allSuccess = data.all_success;
-        const statusMsg = allSuccess ? "✅ Troubleshooting complete! Issue resolved." : "⚠️ Verification failed. Issue may not be fully resolved.";
-        appendMessage(statusMsg, "system");
-        // Simple iteration: if failed and we have not exceeded attempts, offer to re-run diagnostics
-        state.troubleshootAttempts = (state.troubleshootAttempts || 0) + 1;
-        if (!allSuccess && state.troubleshootAttempts < 3) {
-          const retryGroup = document.createElement('div');
-          retryGroup.className = 'confirm-buttons';
-          const retryBtn = document.createElement('button');
-          retryBtn.textContent = 'Re-run Diagnostics';
-          retryBtn.onclick = () => startDiagnostics(state.troubleshootPlan, retryGroup);
-          const cancelBtn = document.createElement('button');
-          cancelBtn.textContent = 'Stop';
-          cancelBtn.onclick = () => { appendMessage('Stopped after failed verification.', 'system'); retryGroup.remove(); };
-          retryGroup.append(retryBtn, cancelBtn);
-          document.getElementById('chat-container').appendChild(retryGroup);
-        } else if (!allSuccess) {
-          appendMessage('Reached maximum attempts. Consider providing more details or checking logs.', 'system');
-        }
+      if (stepType === 'verification') {
+        const ok = !!(data && data.all_success);
+        const statusMsg = ok ? '✅ Troubleshooting complete! Issue resolved.' : '⚠️ Verification failed. Issue may not be fully resolved.';
+        appendMessage(statusMsg, 'system');
       }
       document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
     })
@@ -133,39 +204,36 @@ function startDiagnostics(plan, buttonContainer) {
       return offerFixes(plan);
     }
     const cmd = cmds.shift();
-    const tmpGroup = document.createElement('div');
-    tmpGroup.className = 'hidden'; // not shown; just placeholder for API compat
-    fetch('/troubleshoot/execute', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commands: [cmd], step_type: 'diagnostic', host: state.currentHost, username: state.currentUser, port: 22 })
-    })
-      .then(r => r.json())
-      .then(data => {
-        const res = (data.results && data.results[0]) || { command: cmd, output: '', error: '' };
-        const resultDiv = document.createElement('div');
-        resultDiv.className = 'message system troubleshoot-result';
-        resultDiv.innerHTML = `
-          <strong>Command:</strong> ${res.command}<br>
-          <strong>Output:</strong> <pre>${res.output || '(no output)'}</pre>
-          ${res.error ? `<strong>Error:</strong> <pre>${res.error}</pre>` : ''}
-        `;
-        document.getElementById('chat-container').appendChild(resultDiv);
-        outputs.push((res.output || '') + '\n' + (res.error || ''));
-
-        // Analyze this step
-        const decision = analyzeDiagnostic(outputs.join('\n'));
-        if (decision.confident) {
-          appendMessage(`Diagnosis: ${decision.summary} Proceeding to propose fixes.`, 'ai');
-          return offerFixes(plan);
-        }
-        // Continue with next diagnostic
-        runNext();
-      })
-      .catch(err => {
-        appendMessage(`Diagnostic step error: ${err.message}`, 'system');
-        // Try next diagnostic even if one fails
-        runNext();
-      });
+    // Prefer terminal execution so outputs appear in terminal window
+    const canUseTerminal = state && state.socket && state.socket.connected && state.terminal;
+    const doOne = async () => {
+      try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch(_){}
+      const res = await runCommandInTerminal(cmd);
+      // Post concise summary to chat
+      appendMessage(`Ran diagnostic: ${cmd}`, 'system');
+      outputs.push(res.output || '');
+      const decision = analyzeDiagnostic(outputs.join('\n'));
+      if (decision.confident) {
+        appendMessage(`Diagnosis: ${decision.summary}. Proposing fixes.`, 'ai');
+        return offerFixes(plan);
+      }
+      runNext();
+    };
+    if (canUseTerminal) doOne().catch(() => runNext());
+    else {
+      // Fallback to API for this step
+      fetch('/troubleshoot/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commands: [cmd], step_type: 'diagnostic', host: state.currentHost, username: state.currentUser, port: 22 }) })
+        .then(r => r.json())
+        .then(data => {
+          const r0 = (data.results && data.results[0]) || { command: cmd, output: '', error: '' };
+          appendMessage(`Ran diagnostic: ${cmd}`, 'system');
+          outputs.push(((r0.output || '') + '\n' + (r0.error || '')).trim());
+          const decision = analyzeDiagnostic(outputs.join('\n'));
+          if (decision.confident) { appendMessage(`Diagnosis: ${decision.summary}. Proposing fixes.`, 'ai'); return offerFixes(plan); }
+          runNext();
+        })
+        .catch(() => runNext());
+    }
   };
 
   runNext();
