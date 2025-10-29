@@ -20,20 +20,36 @@ engine = TroubleshootingEngine()
 @cross_origin()
 def analyze_error():
     """Analyze error text and suggest diagnostic commands"""
-    data = request.get_json()
-    error_text = data.get("error_text")
-    
-    if not error_text:
-        return jsonify({"error": "error_text is required"}), 400
-    
     try:
-        # Get analysis and diagnostic commands
+        data = request.get_json()
+        if not data:
+            logger.error("No JSON data received")
+            return jsonify({"error": "No JSON data received"}), 400
+            
+        error_text = data.get("error_text")
+        if not error_text:
+            logger.error("error_text field is required")
+            return jsonify({"error": "error_text is required"}), 400
+        
+        logger.info(f"Analyzing error: {error_text[:100]}...")
         analysis = engine.analyze_error(error_text)
-        return jsonify(analysis)
+        logger.info("Analysis completed successfully")
+        
+        return jsonify({
+            "success": True,
+            "analysis": analysis.get("analysis", "Analysis completed"),
+            "diagnostic_commands": analysis.get("diagnostic_commands", []),
+            "risk_level": "low",  # Add risk level for UI compatibility
+            "reasoning": "AI-based error analysis"  # Add reasoning for UI compatibility
+        })
         
     except Exception as e:
-        logger.error(f"Error analyzing troubleshooting request: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error analyzing troubleshooting request: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Analysis failed: {str(e)}",
+            "diagnostic_commands": []
+        }), 500
 
 @troubleshooting_bp.route("/suggest-fix", methods=["POST"])
 @cross_origin() 

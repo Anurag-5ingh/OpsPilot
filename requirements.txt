@@ -1,13 +1,11 @@
 # Core Framework
 Flask==3.0.0
 Flask-SocketIO==5.3.6
-<<<<<<< HEAD
-eventlet==0.33.3
-=======
+Flask-CORS==4.0.0
 
-# Async execution support (not used; SocketIO runs in threading mode)
-# eventlet removed as unused
->>>>>>> local
+# Async execution support
+# Using threading mode for better Windows compatibility
+# eventlet==0.33.3  # Removed as unused
 
 # SSH and Security
 paramiko==3.3.1
