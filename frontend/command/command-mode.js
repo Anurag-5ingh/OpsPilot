@@ -413,77 +413,204 @@ function submitPrompt() {
   appendMessage(prompt, "user");
   input.value = "";
   setButtonLoading(askBtn, true);
-
-  fetch("/ask", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  })
+  // Route request depending on selected frontend mode. For 'command' use /ask, for 'troubleshoot' use /troubleshoot/analyze
+  if (state.currentMode === 'troubleshoot') {
+    // Send as troubleshoot analyze request but reuse command-mode UI for presenting fixes so frontend is identical
+    fetch('/troubleshoot/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error_text: prompt })
+    })
     .then(res => res.json())
     .then(data => {
       setButtonLoading(askBtn, false);
+      // Append analysis summary if available
+      if (data.analysis || data.analysis_text || data.reasoning) {
+        const analysisText = data.analysis || data.analysis_text || data.reasoning || '';
+        appendMessage(`Analysis: ${analysisText}`, 'ai');
+      }
 
-      if (data.ai_command || data.ai_response?.final_command) {
-        const commandData = data.ai_response || { final_command: data.ai_command };
-        state.currentCommand = commandData.final_command;
-
-        // Container for description + code card
+      // If backend suggested fix commands, show all as selectable code cards
+      const fixes = data.fix_commands || data.suggested_commands || [];
+      if (fixes && fixes.length > 0) {
         const container = document.getElementById('chat-container');
-
         const block = document.createElement('div');
-        block.className = 'ai-command-block';
+        block.className = 'ai-command-block fixes-container';
 
-        // Description line (comes from backend as concise action_text)
+        // Add header text showing number of fixes
         const desc = document.createElement('p');
         desc.className = 'ai-command-desc';
-        let smartText = (commandData.action_text && commandData.action_text.trim()) ? commandData.action_text.trim() : (prompt || '').trim();
-        if (smartText.toLowerCase().startsWith('to ')) smartText = smartText.slice(3);
-        desc.textContent = smartText.endsWith(':') ? smartText : `${smartText}:`;
+        desc.textContent = `${fixes.length} potential ${fixes.length === 1 ? 'fix' : 'fixes'} suggested:`;
         block.appendChild(desc);
 
-        // Code card with header and copy button
-        const card = document.createElement('div');
-        card.className = 'code-card';
+        // Create a card for each fix command
+        fixes.forEach((fixCmd, index) => {
+          const card = document.createElement('div');
+          card.className = 'code-card fix-card';
+          
+          const header = document.createElement('div');
+          header.className = 'code-card-header';
+          
+          // Left side: language + fix number
+          const leftHeader = document.createElement('div');
+          leftHeader.className = 'code-card-left';
+          const lang = document.createElement('span');
+          lang.className = 'code-card-lang';
+          lang.textContent = 'bash';
+          const fixNum = document.createElement('span');
+          fixNum.className = 'fix-number';
+          fixNum.textContent = `Fix #${index + 1}`;
+          leftHeader.appendChild(lang);
+          leftHeader.appendChild(fixNum);
 
-        const header = document.createElement('div');
-        header.className = 'code-card-header';
-        const lang = document.createElement('span');
-        lang.className = 'code-card-lang';
-        lang.textContent = 'bash';
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'code-card-copy';
-        copyBtn.textContent = 'Copy code';
-        copyBtn.onclick = () => copyCommandToClipboard(commandData.final_command);
-        header.appendChild(lang);
-        header.appendChild(copyBtn);
+          // Right side: copy + execute buttons
+          const actions = document.createElement('div');
+          actions.className = 'code-card-actions';
+          const copyBtn = document.createElement('button');
+          copyBtn.className = 'code-card-copy';
+          copyBtn.innerHTML = '<span class="btn-icon">📋</span> Copy';
+          copyBtn.onclick = () => copyCommandToClipboard(fixCmd);
+          const execBtn = document.createElement('button');
+          execBtn.className = 'code-card-execute';
+          execBtn.innerHTML = '<span class="btn-icon">▶️</span> Execute';
+          execBtn.onclick = () => {
+            // Set current command and show confirmation
+            state.currentCommand = fixCmd;
+            const cmdData = { 
+              final_command: fixCmd, 
+              action_text: `Fix #${index + 1}`, 
+              risk_analysis: data.risk_analysis || {} 
+            };
+            showConfirmButtons(cmdData);
+          };
+          actions.appendChild(copyBtn);
+          actions.appendChild(execBtn);
 
-        const body = document.createElement('div');
-        body.className = 'code-card-body';
-        const pre = document.createElement('pre');
-        const code = document.createElement('code');
-        code.textContent = commandData.final_command;
-        pre.appendChild(code);
-        body.appendChild(pre);
+          header.appendChild(leftHeader);
+          header.appendChild(actions);
 
-        card.appendChild(header);
-        card.appendChild(body);
-        block.appendChild(card);
+          const body = document.createElement('div');
+          body.className = 'code-card-body';
+          const pre = document.createElement('pre');
+          const code = document.createElement('code');
+          code.textContent = fixCmd;
+          pre.appendChild(code);
+          body.appendChild(pre);
+
+          card.appendChild(header);
+          card.appendChild(body);
+          block.appendChild(card);
+        });
 
         container.appendChild(block);
         container.scrollTop = container.scrollHeight;
 
-        
+        // Add a "Run Diagnostics" button that uses existing troubleshoot flow
+        const diagBlock = document.createElement('div');
+        diagBlock.className = 'diagnostic-action';
+        diagBlock.innerHTML = `
+          <button class="secondary-btn run-diagnostics">
+            <span class="btn-icon">🔍</span> Run Deep Diagnostics
+          </button>
+          <small class="diagnostic-help">Run step-by-step diagnostics to verify the problem and solutions</small>
+        `;
+        container.appendChild(diagBlock);
 
-        // Show confirmation with risk awareness
-        showConfirmButtons(commandData);
+        // Wire up diagnostics button to use existing troubleshoot flow
+        const diagBtn = diagBlock.querySelector('.run-diagnostics');
+        diagBtn.onclick = () => {
+          // Import the existing troubleshoot handler
+          if (window.Modules && window.Modules.Troubleshoot && typeof window.Modules.Troubleshoot.startDiagnostics === 'function') {
+            window.Modules.Troubleshoot.startDiagnostics(data);
+          } else if (typeof startDiagnostics === 'function') {
+            startDiagnostics(data);
+          } else {
+            appendMessage('Diagnostic flow not available.', 'system');
+          }
+          // Remove this button after clicking
+          diagBlock.remove();
+        };
       } else {
-        appendMessage("Failed to generate command.", "system");
+        appendMessage('No suggested fixes returned from analysis.', 'system');
       }
     })
-    .catch(() => {
+    .catch(err => {
       setButtonLoading(askBtn, false);
-      appendMessage("Backend error.", "system");
+      appendMessage(`Troubleshoot backend error: ${err.message || err}`, 'system');
     });
+
+    return;
+  }
+
+  // Default: command generation
+  fetch('/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt })
+  })
+  .then(res => res.json())
+  .then(data => {
+    setButtonLoading(askBtn, false);
+
+    if (data.ai_command || data.ai_response?.final_command) {
+      const commandData = data.ai_response || { final_command: data.ai_command };
+      state.currentCommand = commandData.final_command;
+
+      // Container for description + code card
+      const container = document.getElementById('chat-container');
+
+      const block = document.createElement('div');
+      block.className = 'ai-command-block';
+
+      // Description line (comes from backend as concise action_text)
+      const desc = document.createElement('p');
+      desc.className = 'ai-command-desc';
+      let smartText = (commandData.action_text && commandData.action_text.trim()) ? commandData.action_text.trim() : (prompt || '').trim();
+      if (smartText.toLowerCase().startsWith('to ')) smartText = smartText.slice(3);
+      desc.textContent = smartText.endsWith(':') ? smartText : `${smartText}:`;
+      block.appendChild(desc);
+
+      // Code card with header and copy button
+      const card = document.createElement('div');
+      card.className = 'code-card';
+
+      const header = document.createElement('div');
+      header.className = 'code-card-header';
+      const lang = document.createElement('span');
+      lang.className = 'code-card-lang';
+      lang.textContent = 'bash';
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-card-copy';
+      copyBtn.textContent = 'Copy code';
+      copyBtn.onclick = () => copyCommandToClipboard(commandData.final_command);
+      header.appendChild(lang);
+      header.appendChild(copyBtn);
+
+      const body = document.createElement('div');
+      body.className = 'code-card-body';
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = commandData.final_command;
+      pre.appendChild(code);
+      body.appendChild(pre);
+
+      card.appendChild(header);
+      card.appendChild(body);
+      block.appendChild(card);
+
+      container.appendChild(block);
+      container.scrollTop = container.scrollHeight;
+
+      // Show confirmation with risk awareness
+      showConfirmButtons(commandData);
+    } else {
+      appendMessage('Failed to generate command.', 'system');
+    }
+  })
+  .catch(() => {
+    setButtonLoading(askBtn, false);
+    appendMessage('Backend error.', 'system');
+  });
 }
 /*
  * Command Generation Mode Module (renamed to camelCase)

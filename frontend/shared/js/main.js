@@ -297,6 +297,30 @@ function openTerminalSplit() {
 // Expose globally
 try { window.openTerminalSplit = openTerminalSplit; } catch (_) {}
 
+// Collapse/hide the terminal split (mirror of openTerminalSplit)
+function collapseTerminalSplit() {
+  const left = document.querySelector('.left-panel');
+  const right = document.getElementById('terminal-panel');
+  const resizer = document.getElementById('split-resizer');
+  if (!left || !right) return;
+
+  // Hide terminal panel and resizer, keep left panel expanded to full width
+  right.classList.add('collapsed');
+  right.classList.remove('full');
+  left.classList.remove('hidden');
+  left.classList.add('expanded');
+  if (resizer) resizer.classList.add('hidden');
+
+  // Reset explicit widths so the left panel can expand naturally
+  try {
+    left.style.width = '';
+    if (right) right.style.width = '';
+  } catch (_) {}
+}
+
+// Expose globally for inline calls
+try { window.collapseTerminalSplit = collapseTerminalSplit; } catch (_) {}
+
 // Draggable vertical resizer between chat and terminal panels
 function setupSplitResizer() {
   const resizer = document.getElementById('split-resizer');

@@ -3,9 +3,15 @@
   "version": "1.0.0",
   "description": "OpsPilot is an intelligent DevOps assistant.",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+  "test": "mocha \"frontend/tests/**/*.js\" --exit"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "jsdom": "^22.1.0",
+    "mocha": "^10.2.0"
+  }
 }

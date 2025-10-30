@@ -98,12 +98,15 @@ function toggleMode(mode) {
     const userInput = document.getElementById('user-input');
     if (userInput) userInput.focus();
   } else if (mode === 'troubleshoot') {
-    // Ensure split for chat modes
+    // For troubleshoot mode, reuse the Command editor UI (frontend unified). Backend behavior will differ.
     try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
     if (chatTab) chatTab.classList.add('active');
-    if (troubleshootContainer) troubleshootContainer.classList.remove('hidden');
-    const errorInput = document.getElementById('error-input');
-    if (errorInput) errorInput.focus();
+    // Show command input container (same editor as command mode)
+    if (commandContainer) commandContainer.classList.remove('hidden');
+    // Ensure the dedicated troubleshoot input is hidden
+    if (troubleshootContainer) troubleshootContainer.classList.add('hidden');
+    const userInput = document.getElementById('user-input');
+    if (userInput) userInput.focus();
   } else if (mode === 'logs') {
     // Collapse split on logs
     try { if (window.collapseTerminalSplit) window.collapseTerminalSplit(); } catch (_) {}
@@ -114,6 +117,9 @@ function toggleMode(mode) {
   // Notify listeners
   document.dispatchEvent(new CustomEvent('mode:changed', { detail: { mode } }));
 }
+
+// Expose for inline/global usage (defensive)
+try { window.toggleMode = toggleMode; } catch (_) {}
 
 /**
  * Profile the server and update system awareness
