@@ -1,0 +1,86 @@
+.fixes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.fix-card {
+    border: 1px solid var(--vscode-button-separator);
+    transition: border-color 0.2s;
+}
+
+.fix-card:hover {
+    border-color: var(--vscode-button-foreground);
+}
+
+.code-card-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.fix-number {
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+}
+
+.code-card-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.code-card-copy,
+.code-card-execute {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.9em;
+    border: 1px solid var(--vscode-button-border);
+    border-radius: 3px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+}
+
+.code-card-copy:hover,
+.code-card-execute:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.btn-icon {
+    font-size: 1em;
+    line-height: 1;
+}
+
+.diagnostic-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.run-diagnostics {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 1em;
+    border: 1px solid var(--vscode-button-secondaryBorder);
+    border-radius: 4px;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    cursor: pointer;
+}
+
+.run-diagnostics:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.diagnostic-help {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+    text-align: center;
+}

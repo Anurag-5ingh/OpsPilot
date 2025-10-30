@@ -1,7 +1,7 @@
 # Core Framework
 Flask==3.0.0
 Flask-SocketIO==5.3.6
-Flask-CORS==4.0.0
+pip install -r requirements.txtFlask-CORS==4.0.0
 
 # Async execution support
 # Using threading mode for better Windows compatibility
