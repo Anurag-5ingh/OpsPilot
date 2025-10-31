@@ -6,9 +6,10 @@
 // Global state
 const state = {
   currentCommand: "",
-  currentHost: "",
-  currentUser: "",
-  currentPassword: "",
+  currentHost: "localhost",  // Using Windows OpenSSH
+  currentUser: "amren",     // Your current Windows username
+  currentPassword: "",      // No password - using Windows auth
+  currentPort: 22,         // Windows OpenSSH default port
   socket: null,
   terminal: null,
   terminalConnected: false,
