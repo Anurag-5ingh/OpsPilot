@@ -110,6 +110,9 @@ function initializeTerminal() {
   state.socket.on("terminal_output", data => {
     if (state.terminal) {
       state.terminal.write(data.output);
+      // Emit a DOM event so other modules (e.g., Troubleshoot coordinator)
+      // can observe terminal output without touching socket wiring.
+      try { document.dispatchEvent(new CustomEvent('terminal:output', { detail: data })); } catch (_) {}
       if (data.output.includes("Connected to")) {
         state.terminalConnected = true;
         clearTimeout(connectionTimeout);
