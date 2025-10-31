@@ -99,15 +99,16 @@ function toggleMode(mode) {
     const userInput = document.getElementById('user-input');
     if (userInput) userInput.focus();
   } else if (mode === 'troubleshoot') {
-    // For troubleshoot mode, reuse the Command editor UI (frontend unified). Backend behavior will differ.
+    // For troubleshoot mode, show the dedicated Troubleshoot editor (error input)
+    // and hide the Command editor. This lets users paste error messages into
+    // the proper textarea and click the Troubleshoot button.
     try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
     if (chatTab) chatTab.classList.add('active');
-    // Show command input container (same editor as command mode)
-    if (commandContainer) commandContainer.classList.remove('hidden');
-    // Ensure the dedicated troubleshoot input is hidden
-    if (troubleshootContainer) troubleshootContainer.classList.add('hidden');
-    const userInput = document.getElementById('user-input');
-    if (userInput) userInput.focus();
+    // Show troubleshoot input container and hide the command input container
+    if (troubleshootContainer) troubleshootContainer.classList.remove('hidden');
+    if (commandContainer) commandContainer.classList.add('hidden');
+    const errInput = document.getElementById('error-input');
+    if (errInput) errInput.focus();
   } else if (mode === 'logs') {
     // Collapse split on logs
     try { if (window.collapseTerminalSplit) window.collapseTerminalSplit(); } catch (_) {}
