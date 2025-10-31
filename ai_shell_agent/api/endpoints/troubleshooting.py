@@ -6,6 +6,11 @@ from flask import Blueprint, request, jsonify
 from flask_cors import cross_origin
 import logging
 from ai_shell_agent.modules.troubleshooting.engine import TroubleshootingEngine
+try:
+    # Prefer the AI handler which returns a full troubleshooting structure
+    from ai_shell_agent.modules.troubleshooting.ai_handler import ask_ai_for_troubleshoot
+except Exception:
+    ask_ai_for_troubleshoot = None
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -32,15 +37,40 @@ def analyze_error():
             return jsonify({"error": "error_text is required"}), 400
         
         logger.info(f"Analyzing error: {error_text[:100]}...")
+
+        # If AI handler is available, prefer it so we can return fixes and verification commands
+        if ask_ai_for_troubleshoot:
+            try:
+                ai_result = ask_ai_for_troubleshoot(error_text)
+                if ai_result and ai_result.get("success"):
+                    tr = ai_result.get("troubleshoot_response", {})
+                    logger.info("AI troubleshooting analysis completed successfully")
+                    return jsonify({
+                        "success": True,
+                        "analysis": tr.get("analysis", "Analysis completed"),
+                        "diagnostic_commands": tr.get("diagnostic_commands", []),
+                        "fix_commands": tr.get("fix_commands", []),
+                        "verification_commands": tr.get("verification_commands", []),
+                        "risk_level": tr.get("risk_level", "medium"),
+                        "reasoning": tr.get("reasoning", ""),
+                    })
+                else:
+                    logger.warning("AI troubleshooting handler returned no usable response, falling back to engine")
+            except Exception as e:
+                logger.exception(f"AI handler failed: {e}. Falling back to engine.")
+
+        # Fallback to simple engine analysis (diagnostic only)
         analysis = engine.analyze_error(error_text)
-        logger.info("Analysis completed successfully")
-        
+        logger.info("Engine analysis completed (fallback)")
+
         return jsonify({
             "success": True,
             "analysis": analysis.get("analysis", "Analysis completed"),
             "diagnostic_commands": analysis.get("diagnostic_commands", []),
-            "risk_level": "low",  # Add risk level for UI compatibility
-            "reasoning": "AI-based error analysis"  # Add reasoning for UI compatibility
+            "fix_commands": [],
+            "verification_commands": [],
+            "risk_level": "low",
+            "reasoning": "Fallback analysis (no AI)"
         })
         
     except Exception as e:
