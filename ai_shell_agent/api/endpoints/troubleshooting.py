@@ -92,9 +92,33 @@ def suggest_fix():
         return jsonify({"error": "diagnostic_results are required"}), 400
     
     try:
-        # Get fix suggestions
+        # Prefer AI handler for richer suggestions when available
+        if ask_ai_for_troubleshoot:
+            try:
+                ai_result = ask_ai_for_troubleshoot('', context={"diagnostic_results": diagnostic_results})
+                if ai_result and ai_result.get("success"):
+                    tr = ai_result.get("troubleshoot_response", {})
+                    normalized = {
+                        "fix_commands": tr.get("fix_commands", []),
+                        "verification_commands": tr.get("verification_commands", []),
+                        "reasoning": tr.get("reasoning", ""),
+                        "risk_level": tr.get("risk_level", "medium")
+                    }
+                    return jsonify(normalized)
+                else:
+                    logger.warning("AI suggest-fix returned no usable response, falling back to engine")
+            except Exception as e:
+                logger.exception(f"AI suggest-fix handler failed: {e}. Falling back to engine.")
+
+        # Fallback: Get fix suggestions from the engine
         fixes = engine.analyze_diagnostic_output(diagnostic_results)
-        return jsonify(fixes)
+        normalized = {
+            "fix_commands": fixes.get("fix_commands", []) if isinstance(fixes, dict) else [],
+            "verification_commands": fixes.get("verification_commands", []) if isinstance(fixes, dict) else [],
+            "reasoning": fixes.get("reasoning", "") if isinstance(fixes, dict) else "",
+            "risk_level": fixes.get("risk_level", "medium") if isinstance(fixes, dict) else "medium"
+        }
+        return jsonify(normalized)
         
     except Exception as e:
         logger.error(f"Error generating fix suggestions: {e}")

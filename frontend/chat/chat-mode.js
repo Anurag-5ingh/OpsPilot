@@ -350,6 +350,71 @@ function submitPrompt() {
 }
 
 // --- Troubleshoot facade to preserve API used by tests and other modules ---
+// Submit collected diagnostic results to backend and render fixes/verification
+function submitDiagnosticResults(diagnostic_results, container) {
+  if (!Array.isArray(diagnostic_results)) diagnostic_results = [];
+  appendMessage('Submitting diagnostic outputs for further analysis...', 'system');
+  return fetch('/troubleshoot/suggest-fix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ diagnostic_results }) })
+  .then(res => res.json())
+  .then(fixData => {
+    const returnedFixes = fixData.fix_commands || fixData.suggested_commands || [];
+    const verifs = fixData.verification_commands || [];
+    if (fixData.reasoning) appendMessage(`Reasoning: ${fixData.reasoning}`, 'ai');
+    if (returnedFixes && returnedFixes.length > 0) {
+      const fixesBlock = document.createElement('div'); fixesBlock.className = 'ai-command-block fixes-container';
+      const desc2 = document.createElement('p'); desc2.className = 'ai-command-desc'; desc2.textContent = `${returnedFixes.length} potential ${returnedFixes.length === 1 ? 'fix' : 'fixes'} suggested:`; fixesBlock.appendChild(desc2);
+      returnedFixes.forEach((fixCmd, idx) => {
+        const card = document.createElement('div'); card.className = 'code-card fix-card';
+        const header = document.createElement('div'); header.className = 'code-card-header';
+        const leftHeader = document.createElement('div'); leftHeader.className = 'code-card-left';
+        const lang = document.createElement('span'); lang.className = 'code-card-lang'; lang.textContent = 'bash';
+        const fixNum = document.createElement('span'); fixNum.className = 'fix-number'; fixNum.textContent = `Fix #${idx + 1}`; leftHeader.appendChild(lang); leftHeader.appendChild(fixNum);
+        const actions = document.createElement('div'); actions.className = 'code-card-actions';
+        const copyBtn = document.createElement('button'); copyBtn.className = 'code-card-copy'; copyBtn.innerHTML = '<span class="btn-icon">📋</span> Copy'; copyBtn.onclick = () => copyCommandToClipboard(fixCmd);
+        const execBtn = document.createElement('button'); execBtn.className = 'code-card-execute'; execBtn.innerHTML = '<span class="btn-icon">▶️</span> Execute';
+        execBtn.onclick = () => { const cmdData = { final_command: fixCmd, action_text: `Fix #${idx + 1}`, risk_analysis: fixData.risk_analysis || {} }; showConfirmButtons(cmdData); };
+        actions.appendChild(copyBtn); actions.appendChild(execBtn);
+        header.appendChild(leftHeader); header.appendChild(actions);
+        const body = document.createElement('div'); body.className = 'code-card-body'; const pre = document.createElement('pre'); const code = document.createElement('code'); code.textContent = fixCmd; pre.appendChild(code); body.appendChild(pre);
+        card.appendChild(header); card.appendChild(body); fixesBlock.appendChild(card);
+      });
+      container.appendChild(fixesBlock); container.scrollTop = container.scrollHeight;
+    } else {
+      appendMessage('No suggested fixes returned from diagnostic analysis.', 'system');
+    }
+
+    if (verifs && verifs.length > 0) {
+      const verBlock = document.createElement('div'); verBlock.className = 'verification-block';
+      const vdesc = document.createElement('p'); vdesc.className = 'ai-command-desc'; vdesc.textContent = `Verification commands (${verifs.length}):`;
+      verBlock.appendChild(vdesc);
+      verifs.forEach(vc => {
+        const p = document.createElement('pre'); p.textContent = vc; verBlock.appendChild(p);
+      });
+      container.appendChild(verBlock);
+    }
+  })
+  .catch(err => { appendMessage(`Troubleshoot backend error: ${err.message || err}`, 'system'); });
+}
+
+// Capture terminal output events and, if awaiting a diagnostic, accumulate
+// and submit results after a short debounce
+let __diag_debounce_timer = null;
+function onTerminalOutputCapture(evt) {
+  try {
+    if (!state.awaitingDiagnostic) return;
+    const data = evt && evt.detail ? evt.detail : evt;
+    state.awaitingDiagnostic.buffer = (state.awaitingDiagnostic.buffer || '') + (data.output || '');
+    // debounce submit: wait 700ms of no new output
+    if (__diag_debounce_timer) clearTimeout(__diag_debounce_timer);
+    __diag_debounce_timer = setTimeout(() => {
+      const result = { command: state.awaitingDiagnostic.command, output: state.awaitingDiagnostic.buffer };
+      state.awaitingDiagnostic = null;
+      // find a container to render fixes into
+      const container = document.getElementById('chat-container');
+      submitDiagnosticResults([result], container);
+    }, 700);
+  } catch (_) {}
+}
 function submitTroubleshoot() {
   const input = document.getElementById("error-input");
   const troubleshootBtn = document.getElementById("troubleshoot-btn");
@@ -368,9 +433,57 @@ function submitTroubleshoot() {
   .then(data => {
     setButtonLoading(troubleshootBtn, false);
     if (data.analysis || data.reasoning) appendMessage(`Analysis: ${data.analysis || data.reasoning}`, 'ai');
+    const diagnostics = data.diagnostic_commands || [];
     const fixes = data.fix_commands || data.suggested_commands || [];
-    if (fixes && fixes.length > 0) {
-      const container = document.getElementById('chat-container');
+    const container = document.getElementById('chat-container');
+
+    if (diagnostics && diagnostics.length > 0) {
+      const diagBlock = document.createElement('div');
+      diagBlock.className = 'ai-command-block diagnostics-container';
+      const desc = document.createElement('p'); desc.className = 'ai-command-desc'; desc.textContent = `Diagnostic commands suggested (${diagnostics.length}):`;
+      diagBlock.appendChild(desc);
+
+      const textareaIds = [];
+      diagnostics.forEach((cmd, index) => {
+        const card = document.createElement('div'); card.className = 'code-card diag-card';
+        const header = document.createElement('div'); header.className = 'code-card-header';
+        const lang = document.createElement('span'); lang.className = 'code-card-lang'; lang.textContent = 'bash';
+        const cmdSpan = document.createElement('span'); cmdSpan.className = 'diag-cmd'; cmdSpan.textContent = cmd;
+        header.appendChild(lang); header.appendChild(cmdSpan);
+
+        // Execute button to run diagnostic and capture terminal output
+        const execBtn = document.createElement('button'); execBtn.className = 'diag-exec-btn'; execBtn.textContent = 'Execute';
+        execBtn.onclick = () => {
+          try { state.awaitingDiagnostic = { command: cmd, buffer: '' }; } catch (_) {}
+          appendMessage(`Executing diagnostic: ${cmd}`, 'system');
+          executeCommand(cmd);
+        };
+        header.appendChild(execBtn);
+
+        const body = document.createElement('div'); body.className = 'code-card-body';
+        const outputLabel = document.createElement('label'); outputLabel.textContent = 'Paste diagnostic output (or leave empty if unavailable):';
+        const ta = document.createElement('textarea');
+        const taId = `diag-output-${Date.now()}-${index}`;
+        ta.id = taId;
+        ta.rows = 4;
+        ta.className = 'diag-output-textarea';
+        textareaIds.push({ id: taId, command: cmd });
+        body.appendChild(outputLabel);
+        body.appendChild(ta);
+
+        card.appendChild(header); card.appendChild(body); diagBlock.appendChild(card);
+      });
+
+      const analyzeBtn = document.createElement('button'); analyzeBtn.className = 'primary-btn analyze-diagnostics-btn'; analyzeBtn.textContent = 'Analyze diagnostic outputs';
+      analyzeBtn.onclick = () => {
+        const diagnostic_results = textareaIds.map(t => ({ command: t.command, output: (document.getElementById(t.id) || {}).value || '' }));
+        submitDiagnosticResults(diagnostic_results, container);
+      };
+
+      diagBlock.appendChild(analyzeBtn);
+      container.appendChild(diagBlock);
+      container.scrollTop = container.scrollHeight;
+    } else if (fixes && fixes.length > 0) {
       const block = document.createElement('div'); block.className = 'ai-command-block fixes-container';
       const desc = document.createElement('p'); desc.className = 'ai-command-desc'; desc.textContent = `${fixes.length} potential ${fixes.length === 1 ? 'fix' : 'fixes'} suggested:`; block.appendChild(desc);
       fixes.forEach((fixCmd, index) => {
@@ -415,3 +528,6 @@ function submitTroubleshoot() {
     };
   } catch (_) {}
 })();
+
+  // Register terminal output listener for Troubleshoot flow (safe no-op if unavailable)
+  try { document.addEventListener('terminal:output', onTerminalOutputCapture); } catch (_) {}
