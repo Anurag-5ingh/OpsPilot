@@ -178,20 +178,107 @@
 }
 
 .console-log {
-  background: #000;
-  color: #fff;
+  background: #1e1e1e;
+  color: #d4d4d4;
   border-radius: 4px;
   max-height: 60vh;
   overflow-y: auto;
+  position: relative;
+  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+  -webkit-font-smoothing: antialiased;
 }
 
-.console-log pre {
-  padding: 1rem;
-  margin: 0;
-  font-family: 'Courier New', monospace;
+.console-log .log-content {
   font-size: 0.85rem;
-  line-height: 1.4;
-  white-space: pre-wrap;
+  line-height: 20px;
+  padding-left: 50px; /* Space for line numbers */
+}
+
+.console-log .log-line {
+  padding: 0 1rem 0 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-color: transparent;
+  transition: background-color 0.1s;
+  position: relative;
+}
+
+.console-log .log-line:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.console-log .line-number {
+  position: absolute;
+  left: 0;
+  width: 45px;
+  padding-right: 1rem;
+  color: #666;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid #333;
+}
+
+.logs-loading {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 4px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logs-loading .spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ffffff3d;
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.load-more-btn {
+  display: block;
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 1rem;
+  background: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #0052a3;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Error and warning highlights */
+.console-log .log-line.error {
+  color: #f44336;
+}
+
+.console-log .log-line.warning {
+  color: #ff9800;
+}
+
+/* Search highlight */
+.console-log .log-line mark {
+  background: #ffd700;
+  color: #000;
+  padding: 0 2px;
 }
 
 /* Modal styles */
