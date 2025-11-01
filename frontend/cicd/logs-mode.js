@@ -141,6 +141,22 @@ class LogsMode {
     setupEventListeners() {
         this.cleanupEventListeners(); // Clean up any existing listeners first
         
+        // Configure Jenkins button
+        const configJenkinsBtn = document.getElementById('config-jenkins-btn');
+        if (configJenkinsBtn) {
+            configJenkinsBtn.addEventListener('click', () => {
+                this.showJenkinsConfigModal();
+            });
+        }
+        
+        // Configure Ansible button
+        const configAnsibleBtn = document.getElementById('config-ansible-btn');
+        if (configAnsibleBtn) {
+            configAnsibleBtn.addEventListener('click', () => {
+                this.showAnsibleConfigModal();
+            });
+        }
+        
         // Fetch console button
         const fetchConsoleBtn = document.getElementById('fetch-console-btn');
         if (fetchConsoleBtn) {
