@@ -1749,6 +1749,7 @@ def analyze_console_direct():
                 'error_summary': ai_analysis.get('error_summary', 'Build failed'),
                 'root_cause': ai_analysis.get('root_cause', ''),
                 'suggested_commands': suggestions.get('commands', []),
+                'suggested_steps': suggestions.get('steps', []),
                 'suggested_playbook': suggestions.get('playbook'),
                 'confidence_score': ai_analysis.get('confidence_score', 0.5)
             }

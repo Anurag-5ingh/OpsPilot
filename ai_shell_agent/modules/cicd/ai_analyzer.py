@@ -165,6 +165,7 @@ class AILogAnalyzer:
                 'root_cause': ai_analysis.get('root_cause', 'Unable to determine root cause'),
                 'error_categories': quick_analysis.get('categories', []),
                 'suggested_commands': fix_suggestions.get('commands', []),
+                'suggested_steps': fix_suggestions.get('steps', []),
                 'suggested_playbook': fix_suggestions.get('playbook'),
                 'confidence_score': ai_analysis.get('confidence_score', 0.5),
                 'requires_confirmation': True,  # Always require confirmation for safety
@@ -580,6 +581,44 @@ class AILogAnalyzer:
             # Fallback command suggestions based on error categories
             if not suggested_commands:
                 suggested_commands = self._generate_fallback_commands(ai_analysis, console_log)
+                # If even after fallback we have no concrete command, ask AI for human-readable steps
+                suggested_steps: List[str] = []
+                try:
+                    if not suggested_commands:
+                        steps_prompt = f"""
+Given this Jenkins failure analysis, provide a concise, actionable sequence of steps to resolve the issue.
+
+Job: {build_log.job_name}#{build_log.build_number}
+Target Server: {build_log.target_server or 'Unknown'}
+Error Summary: {error_summary}
+Root Cause: {root_cause}
+
+Requirements:
+1) Prefer precise commands when safe and known; otherwise write human-readable steps.
+2) Keep each step on a single line.
+3) Number the steps 1., 2., 3. etc.
+4) Do not include prose outside the steps list.
+"""
+                        steps_result = ask_ai_for_command(
+                            steps_prompt,
+                            memory=self.memory.get(),
+                            system_context=self.system_context,
+                        )
+                        # Parse steps similar to commands (line-wise), but keep as steps
+                        if steps_result:
+                            ai_resp = steps_result.get('ai_response', {})
+                            steps_text = ai_resp.get('final_command') or ai_resp.get('response') or ''
+                            for line in (steps_text or '').split('\n'):
+                                ln = line.strip()
+                                if not ln:
+                                    continue
+                                ln = re.sub(r'^\d+[\.\)]\s*', '', ln)
+                                ln = re.sub(r'^[-\*]\s*', '', ln)
+                                suggested_steps.append(ln)
+                except Exception as _e:
+                    logger.debug(f"Failed to get suggested steps: {_e}")
+            else:
+                suggested_steps = []
             
             # Look for relevant Ansible playbook
             suggested_playbook = None
@@ -589,8 +628,19 @@ class AILogAnalyzer:
                     build_log.target_server
                 )
             
+            try:
+                logger.info(
+                    "Fix suggestions prepared: commands=%s steps=%s playbook=%s",
+                    len(suggested_commands or []),
+                    len(locals().get('suggested_steps', []) or []),
+                    bool(suggested_playbook)
+                )
+            except Exception:
+                pass
+
             return {
                 'commands': suggested_commands[:5],  # Limit to 5 commands for safety
+                'steps': (locals().get('suggested_steps', []) or [])[:7],  # Limit steps
                 'playbook': suggested_playbook
             }
             
