@@ -1098,6 +1098,11 @@ class LogsMode {
     }
 
     showJenkinsConfigModal() {
+        // Remove any existing modal with same ID to avoid duplicate elements
+        try {
+            const existing = document.getElementById('jenkins-config-modal');
+            if (existing) existing.remove();
+        } catch (_) {}
         // Create modal HTML
         const modalHTML = `
             <div class="modal-overlay" id="jenkins-config-modal">
@@ -1208,6 +1213,11 @@ class LogsMode {
     }
 
     showAnsibleConfigModal() {
+        // Remove any existing modal with same ID to avoid duplicate elements
+        try {
+            const existing = document.getElementById('ansible-config-modal');
+            if (existing) existing.remove();
+        } catch (_) {}
         const modalHTML = `
             <div class="modal-overlay" id="ansible-config-modal">
                 <div class="modal-content">
