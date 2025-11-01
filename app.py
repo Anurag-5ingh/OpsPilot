@@ -1750,7 +1750,7 @@ def analyze_console_direct():
                 'root_cause': ai_analysis.get('root_cause', ''),
                 'suggested_commands': suggestions.get('commands', []),
                 'suggested_playbook': suggestions.get('playbook'),
-                'confidence': ai_analysis.get('confidence_score', 0.5)
+                'confidence_score': ai_analysis.get('confidence_score', 0.5)
             }
             return jsonify({'success': True, 'analysis': result}), 200
         finally:

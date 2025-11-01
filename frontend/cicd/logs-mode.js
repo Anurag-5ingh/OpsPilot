@@ -706,7 +706,7 @@ class LogsMode {
                 <div class="error-summary">
                     <p><strong>Root Cause:</strong> ${analysis.root_cause || 'Could not determine'}</p>
                     <p><strong>Error Summary:</strong> ${analysis.error_summary || 'No specific error identified'}</p>
-                    <p><strong>Confidence:</strong> ${Math.round((analysis.confidence || 0) * 100)}%</p>
+                    <p><strong>Confidence:</strong> ${Math.round((analysis.confidence || analysis.confidence_score || 0) * 100)}%</p>
                 </div>
             </div>
             
