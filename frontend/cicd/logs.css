@@ -489,7 +489,10 @@
 
 .console-content {
   padding: 16px;
+  /* Restore container scrolling for long content */
   overflow-y: auto;
+  /* Fill remaining height under header to enable internal scrolling */
+  flex: 1 1 auto;
 }
 
 #console-build-info {
@@ -551,49 +554,23 @@
   margin-top: 1rem;
   padding: 1rem;
   border: 1px solid #dee2e6;
-  max-height: 50vh;
-  overflow-y: auto;
-  padding-bottom: 1rem;
+  /* Let parent container handle scroll; avoid nested scrolling */
+  padding-bottom: 1rem; /* comfortable bottom space */
   border-radius: 8px;
   background: #f8f9fa;
 }
 
-/* Custom scrollbar for analysis results */
-.analysis-results::-webkit-scrollbar {
-  width: 10px;
-}
-
-.analysis-results::-webkit-scrollbar-track {
-  background: #e9ecef;
-  border-radius: 5px;
-}
-
-.analysis-results::-webkit-scrollbar-thumb {
-  background-color: #adb5bd;
-  border-radius: 5px;
-  border: 2px solid #e9ecef;
-}
-
-.analysis-results::-webkit-scrollbar-thumb:hover {
-  background-color: #868e96;
-}
+/* Remove nested scrollbars for analysis results to prevent scroll lock */
 
 /* Ensure analysis results are readable within dark console container */
-#analysis-results {
-  color: #000 !important;
-}
+#analysis-results { color: #000 !important; }
 #analysis-results h4,
 #analysis-results p,
 #analysis-results div,
 #analysis-results span,
-#analysis-results li {
-  color: #000 !important;
-}
+#analysis-results li { color: #000 !important; }
 #analysis-results pre,
-#analysis-results code {
-  background: #fff;
-  color: #000 !important;
-}
+#analysis-results code { background: #fff; color: #000 !important; }
 
 .analysis-summary {
   margin-bottom: 1rem;

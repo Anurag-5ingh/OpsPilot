@@ -740,19 +740,6 @@ class LogsMode {
         
         try { console.log('[LogsMode] Rendering analysis results'); } catch (_) {}
         container.innerHTML = resultsHTML;
-        // Ensure the analysis block itself is scrollable and comfortable at the bottom
-        try {
-            container.style.overflowY = 'auto';
-            // Cap height so long analyses don't push layout; allow vertical scrolling
-            if (!container.style.maxHeight) {
-                container.style.maxHeight = '50vh';
-            }
-            // Add a tiny spacer so the last line isn't flush with the bottom edge
-            const spacer = document.createElement('div');
-            spacer.style.height = '16px';
-            spacer.style.minHeight = '16px';
-            container.appendChild(spacer);
-        } catch (_) {}
     }
     
     escapeHtml(text) {
