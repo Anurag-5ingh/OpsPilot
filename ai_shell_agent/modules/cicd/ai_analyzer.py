@@ -629,9 +629,15 @@ Provide only the commands, one per line, without explanation.
     def _parse_command_suggestions(self, command_result: Dict[str, Any]) -> List[str]:
         """Parse AI returned command suggestions into a list of cleaned commands."""
         suggested_commands: List[str] = []
-        if command_result and command_result.get('success'):
-            ai_response = command_result.get('ai_response', {})
-            command_text = ai_response.get('final_command', '') or ai_response.get('response', '')
+        if command_result:
+            # Parse from standard ai_handler response shape first; fall back gracefully
+            ai_response = command_result.get('ai_response') or command_result
+            command_text = (
+                ai_response.get('final_command', '')
+                or ai_response.get('response', '')
+                or command_result.get('final_command', '')
+                or ''
+            )
 
             # Extract individual commands
             lines = command_text.split('\n')
