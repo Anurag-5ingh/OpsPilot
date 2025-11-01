@@ -120,6 +120,28 @@
               </div>
             </div>
           </div>
+          <!-- Embedded console log section (inline, initially hidden) -->
+          <div id="embedded-console-section" class="embedded-console-section hidden" style="width: 100%;">
+            <div class="console-container">
+              <div class="console-header">
+                <h3 id="console-title">Console Log</h3>
+                <button id="close-console-btn" class="close-btn" aria-label="Close">×</button>
+              </div>
+              <div class="console-content">
+                <div class="build-info" id="console-build-info"></div>
+                <div class="console-log">
+                  <pre id="console-output"></pre>
+                </div>
+                <div class="console-actions">
+                  <button id="analyze-console-btn" class="primary-btn">
+                    <span class="btn-text">🔍 Analyze & Suggest Fix</span>
+                    <span class="spinner hidden"></span>
+                  </button>
+                </div>
+                <div id="analysis-results" class="analysis-results hidden"></div>
+              </div>
+            </div>
+          </div>
           <div class="logs-content">
             <div class="builds-list" id="builds-list">
               <div class="no-builds-message" id="no-builds-message">
