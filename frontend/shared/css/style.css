@@ -103,6 +103,7 @@ body {
   flex-direction: column;
   border-right: 2px solid #e0e0e0;
   background: #f8f9fa;
+  overflow-y: auto;
 }
 
 .right-panel {
