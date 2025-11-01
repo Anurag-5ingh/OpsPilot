@@ -553,6 +553,28 @@
   border: 1px solid #dee2e6;
   border-radius: 8px;
   background: #f8f9fa;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbar for analysis results */
+.analysis-results::-webkit-scrollbar {
+  width: 10px;
+}
+
+.analysis-results::-webkit-scrollbar-track {
+  background: #e9ecef;
+  border-radius: 5px;
+}
+
+.analysis-results::-webkit-scrollbar-thumb {
+  background-color: #adb5bd;
+  border-radius: 5px;
+  border: 2px solid #e9ecef;
+}
+
+.analysis-results::-webkit-scrollbar-thumb:hover {
+  background-color: #868e96;
 }
 
 /* Ensure analysis results are readable within dark console container */
@@ -583,6 +605,68 @@
 .error-summary {
   margin-top: 0.5rem;
   font-size: 0.9rem;
+}
+
+.error-summary p {
+  margin: 0.5rem 0;
+  word-wrap: break-word;
+}
+
+.suggested-fixes {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #e7f3ff;
+  border-radius: 4px;
+  border-left: 4px solid #0066cc;
+}
+
+.suggested-fixes h4 {
+  margin: 0 0 0.75rem 0;
+  color: #004085;
+}
+
+.fixes-list {
+  margin: 0.5rem 0;
+}
+
+.fix-item {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+  border: 1px solid #cce7ff;
+  transition: background-color 0.2s;
+}
+
+.fix-item:hover {
+  background: #f0f8ff;
+}
+
+.fix-number {
+  font-weight: 600;
+  color: #0066cc;
+  flex-shrink: 0;
+}
+
+.fix-item code {
+  flex: 1;
+  background: transparent !important;
+  color: #000 !important;
+  padding: 0 !important;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.note {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #495057;
 }
 
 .suggested-commands {
@@ -650,6 +734,26 @@
   padding: 1rem;
   margin: 0.5rem 0;
   border-radius: 4px;
+}
+
+.suggested-playbook h4 {
+  margin: 0 0 0.75rem 0;
+  color: #004085;
+}
+
+.suggested-playbook pre {
+  background: #fff;
+  border: 1px solid #cce7ff;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .fix-buttons {
