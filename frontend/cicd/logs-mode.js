@@ -174,11 +174,65 @@ class LogsMode {
         
         if (Array.isArray(configs) && configs.length > 0) {
             configs.forEach(config => {
+                // Create an option that includes the config name and a delete button
                 const option = document.createElement('option');
                 option.value = config.id;
+                // Include base URL in a way that's visually distinct
                 option.textContent = `${config.name} (${config.base_url})`;
                 select.appendChild(option);
             });
+            
+            // Create delete button for the selected config
+            const wrapper = select.closest('.config-item');
+            if (wrapper) {
+                // Create a container for the select and delete button
+                const selectContainer = document.createElement('div');
+                selectContainer.style.display = 'flex';
+                selectContainer.style.alignItems = 'center';
+                selectContainer.style.gap = '8px';
+                selectContainer.style.flex = '1';
+                
+                // Move select into container
+                select.parentNode.insertBefore(selectContainer, select);
+                selectContainer.appendChild(select);
+                select.style.flex = '1';
+                
+                // Create delete button
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'icon-button delete-config';
+                deleteButton.innerHTML = '🗑️';
+                deleteButton.title = 'Delete configuration';
+                deleteButton.style.visibility = select.value ? 'visible' : 'hidden';
+                
+                deleteButton.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = select.value;
+                    if (!id) return;
+                    
+                    if (!confirm('Delete selected Jenkins configuration?')) return;
+                    
+                    try {
+                        const resp = await fetch(`/cicd/jenkins/configs/${id}`, { method: 'DELETE' });
+                        const data = await resp.json();
+                        if (resp.ok) {
+                            window.appendMessage('Jenkins configuration deleted', 'system');
+                            this.loadConfigurations();
+                        } else {
+                            window.appendMessage(data.error || 'Failed to delete Jenkins configuration', 'system');
+                        }
+                    } catch (e) {
+                        window.appendMessage('Error deleting Jenkins configuration: ' + e.message, 'system');
+                    }
+                });
+                
+                // Add delete button to container
+                selectContainer.appendChild(deleteButton);
+                
+                // Update delete button visibility on select change
+                select.addEventListener('change', () => {
+                    deleteButton.style.visibility = select.value ? 'visible' : 'hidden';
+                });
+            }
         } else {
             // Keep default only
             console.warn('[LogsMode] No Jenkins configs found for dropdown');
@@ -189,68 +243,6 @@ class LogsMode {
             select.value = configs[0].id;
             this.currentJenkinsConfig = configs[0].id;
         }
-        
-        // Update select style to accommodate the trash icon if config is selected
-        select.style.paddingRight = select.value ? '30px' : '12px';
-        
-        // Remove existing trash icon if any
-        const existingTrash = select.parentElement.querySelector('.trash-icon');
-        if (existingTrash) {
-            existingTrash.remove();
-        }
-        
-        // Add trash icon if a config is selected
-        if (select.value) {
-            const trashIcon = document.createElement('span');
-            trashIcon.className = 'trash-icon';
-            trashIcon.innerHTML = '🗑️';
-            trashIcon.style.position = 'absolute';
-            trashIcon.style.right = '5px';
-            trashIcon.style.top = '50%';
-            trashIcon.style.transform = 'translateY(-50%)';
-            trashIcon.style.cursor = 'pointer';
-            trashIcon.style.fontSize = '16px';
-            trashIcon.title = 'Delete configuration';
-            
-            // Ensure parent has position relative for absolute positioning
-            select.parentElement.style.position = 'relative';
-            
-            trashIcon.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const id = select.value;
-                if (!id) return;
-                
-                if (!confirm('Delete selected Jenkins configuration?')) return;
-                
-                try {
-                    const resp = await fetch(`/cicd/jenkins/configs/${id}`, { method: 'DELETE' });
-                    const data = await resp.json();
-                    if (resp.ok) {
-                        window.appendMessage('Jenkins configuration deleted', 'system');
-                        this.loadConfigurations();
-                    } else {
-                        window.appendMessage(data.error || 'Failed to delete Jenkins configuration', 'system');
-                    }
-                } catch (e) {
-                    window.appendMessage('Error deleting Jenkins configuration: ' + e.message, 'system');
-                }
-            });
-            
-            select.parentElement.appendChild(trashIcon);
-        }
-        
-        // Add change event listener to handle trash icon visibility
-        select.addEventListener('change', () => {
-            select.style.paddingRight = select.value ? '30px' : '12px';
-            const trashIcon = select.parentElement.querySelector('.trash-icon');
-            if (select.value) {
-                if (!trashIcon) {
-                    this.populateJenkinsConfigs(configs); // Refresh to add trash icon
-                }
-            } else if (trashIcon) {
-                trashIcon.remove();
-            }
-        });
     }
     
     populateAnsibleConfigs(configs) {
@@ -260,80 +252,75 @@ class LogsMode {
         // Clear existing options and set a helpful default
         select.innerHTML = '<option value="">Select Ansible...</option>';
         
-        configs.forEach(config => {
-            const option = document.createElement('option');
-            option.value = config.id;
-            option.textContent = `${config.name} (${config.local_path})`;
-            select.appendChild(option);
-        });
+        if (Array.isArray(configs) && configs.length > 0) {
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = `${config.name} (${config.local_path})`;
+                select.appendChild(option);
+            });
+            
+            // Create delete button for the selected config
+            const wrapper = select.closest('.config-item');
+            if (wrapper) {
+                // Create a container for the select and delete button
+                const selectContainer = document.createElement('div');
+                selectContainer.style.display = 'flex';
+                selectContainer.style.alignItems = 'center';
+                selectContainer.style.gap = '8px';
+                selectContainer.style.flex = '1';
+                
+                // Move select into container
+                select.parentNode.insertBefore(selectContainer, select);
+                selectContainer.appendChild(select);
+                select.style.flex = '1';
+                
+                // Create delete button
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'icon-button delete-config';
+                deleteButton.innerHTML = '🗑️';
+                deleteButton.title = 'Delete configuration';
+                deleteButton.style.visibility = select.value ? 'visible' : 'hidden';
+                
+                deleteButton.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = select.value;
+                    if (!id) return;
+                    
+                    if (!confirm('Delete selected Ansible configuration?')) return;
+                    
+                    try {
+                        const resp = await fetch(`/cicd/ansible/configs/${id}`, { method: 'DELETE' });
+                        const data = await resp.json();
+                        if (resp.ok) {
+                            window.appendMessage('Ansible configuration deleted', 'system');
+                            this.loadConfigurations();
+                        } else {
+                            window.appendMessage(data.error || 'Failed to delete Ansible configuration', 'system');
+                        }
+                    } catch (e) {
+                        window.appendMessage('Error deleting Ansible configuration: ' + e.message, 'system');
+                    }
+                });
+                
+                // Add delete button to container
+                selectContainer.appendChild(deleteButton);
+                
+                // Update delete button visibility on select change
+                select.addEventListener('change', () => {
+                    deleteButton.style.visibility = select.value ? 'visible' : 'hidden';
+                });
+            }
+        } else {
+            // Keep default only
+            console.warn('[LogsMode] No Ansible configs found for dropdown');
+        }
         
         // Select first config if only one exists
         if (configs.length === 1) {
             select.value = configs[0].id;
             this.currentAnsibleConfig = configs[0].id;
         }
-        
-        // Update select style to accommodate the trash icon if config is selected
-        select.style.paddingRight = select.value ? '30px' : '12px';
-        
-        // Remove existing trash icon if any
-        const existingTrash = select.parentElement.querySelector('.trash-icon');
-        if (existingTrash) {
-            existingTrash.remove();
-        }
-        
-        // Add trash icon if a config is selected
-        if (select.value) {
-            const trashIcon = document.createElement('span');
-            trashIcon.className = 'trash-icon';
-            trashIcon.innerHTML = '🗑️';
-            trashIcon.style.position = 'absolute';
-            trashIcon.style.right = '5px';
-            trashIcon.style.top = '50%';
-            trashIcon.style.transform = 'translateY(-50%)';
-            trashIcon.style.cursor = 'pointer';
-            trashIcon.style.fontSize = '16px';
-            trashIcon.title = 'Delete configuration';
-            
-            // Ensure parent has position relative for absolute positioning
-            select.parentElement.style.position = 'relative';
-            
-            trashIcon.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const id = select.value;
-                if (!id) return;
-                
-                if (!confirm('Delete selected Ansible configuration?')) return;
-                
-                try {
-                    const resp = await fetch(`/cicd/ansible/configs/${id}`, { method: 'DELETE' });
-                    const data = await resp.json();
-                    if (resp.ok) {
-                        window.appendMessage('Ansible configuration deleted', 'system');
-                        this.loadConfigurations();
-                    } else {
-                        window.appendMessage(data.error || 'Failed to delete Ansible configuration', 'system');
-                    }
-                } catch (e) {
-                    window.appendMessage('Error deleting Ansible configuration: ' + e.message, 'system');
-                }
-            });
-            
-            select.parentElement.appendChild(trashIcon);
-        }
-        
-        // Add change event listener to handle trash icon visibility
-        select.addEventListener('change', () => {
-            select.style.paddingRight = select.value ? '30px' : '12px';
-            const trashIcon = select.parentElement.querySelector('.trash-icon');
-            if (select.value) {
-                if (!trashIcon) {
-                    this.populateAnsibleConfigs(configs); // Refresh to add trash icon
-                }
-            } else if (trashIcon) {
-                trashIcon.remove();
-            }
-        });
     }
 
     async fetchConsoleFromUrl() {
