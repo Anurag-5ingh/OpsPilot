@@ -13,12 +13,6 @@ class LogsMode {
         this.selectedBuild = null;
         this.currentAnalysis = null;
         
-        // Install global modal handlers once
-        if (!window.__logsConsoleModalHandlersInstalled) {
-            this._installGlobalConsoleModalHandlers();
-            window.__logsConsoleModalHandlersInstalled = true;
-        }
-        
         this.initializeUI();
         this.loadConfigurations();
     }
@@ -379,13 +373,81 @@ class LogsMode {
             const data = await response.json();
             
             if (data.success) {
-                // Display the console log in a modal or dedicated section
-                this.showConsoleLogModal({
-                    job_name: data.job_name,
-                    build_number: data.build_number,
-                    console_log: data.console_log,
-                    original_url: consoleUrl
-                });
+                // Show the embedded console section with the logs
+                const consoleSection = document.getElementById('embedded-console-section');
+                if (consoleSection) {
+                    // Update title
+                    const title = document.getElementById('console-title');
+                    if (title) {
+                        title.textContent = `Console Log: ${data.job_name} #${data.build_number}`;
+                    }
+
+                    // Update build info
+                    const buildInfo = document.getElementById('console-build-info');
+                    if (buildInfo) {
+                        buildInfo.innerHTML = `
+                            <div><strong>Job:</strong> ${data.job_name}</div>
+                            <div><strong>Build:</strong> #${data.build_number}</div>
+                            <div><strong>Source:</strong> <a href="${consoleUrl}" target="_blank">View in Jenkins</a></div>
+                        `;
+                    }
+
+                    // Update console output
+                    const output = document.getElementById('console-output');
+                    if (output) {
+                        output.textContent = this.escapeHtml(data.console_log);
+                    }
+
+                    // Store log data for analysis
+                    consoleSection.dataset.logPayload = JSON.stringify({
+                        job_name: data.job_name,
+                        build_number: data.build_number,
+                        console_log: data.console_log
+                    });
+
+                    // Show the console section
+                    consoleSection.classList.remove('hidden');
+
+                    // Setup close button
+                    const closeBtn = document.getElementById('close-console-btn');
+                    if (closeBtn) {
+                        closeBtn.onclick = () => {
+                            consoleSection.classList.add('hidden');
+                            if (output) output.textContent = '';
+                            if (buildInfo) buildInfo.innerHTML = '';
+                            const analysisResults = document.getElementById('analysis-results');
+                            if (analysisResults) {
+                                analysisResults.innerHTML = '';
+                                analysisResults.classList.add('hidden');
+                            }
+                        };
+                    }
+
+                    // Setup analyze button
+                    const analyzeBtn = document.getElementById('analyze-console-btn');
+                    if (analyzeBtn) {
+                        const newAnalyzeBtn = analyzeBtn.cloneNode(true);
+                        analyzeBtn.parentNode.replaceChild(newAnalyzeBtn, analyzeBtn);
+                        
+                        newAnalyzeBtn.addEventListener('click', async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            try {
+                                await this.analyzeConsoleLog({
+                                    job_name: data.job_name,
+                                    build_number: data.build_number,
+                                    console_log: data.console_log,
+                                    original_url: consoleUrl
+                                }, newAnalyzeBtn);
+                            } catch (error) {
+                                console.error('[LogsMode] Error in analyze button:', error);
+                            }
+                        });
+                    }
+
+                    // Scroll the console section into view
+                    consoleSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
                 
                 showToast(`Fetched console for ${data.job_name} #${data.build_number}`, 'success');
             } else {
