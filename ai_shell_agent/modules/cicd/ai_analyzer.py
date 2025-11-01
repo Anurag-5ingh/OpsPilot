@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from ..command_generation import ask_ai_for_command
 from ..shared import ConversationMemory
+from ..shared.ai_client import get_openai_client
 from ..system_awareness import SystemContextManager
 from .models import BuildLog, FixHistory
 from .jenkins_service import JenkinsService
@@ -46,7 +47,9 @@ class AILogAnalyzer:
                 r'Permission denied',
                 r'Access denied',
                 r'cannot access .+: Permission denied',
-                r'Operation not permitted'
+                r'Operation not permitted',
+                r'EACCES',
+                r'cannot open.*Permission denied'
             ],
             'connection_failed': [
                 r'Connection refused',
@@ -66,6 +69,15 @@ class AILogAnalyzer:
                 r'No such file or directory',
                 r'not found in PATH',
                 r'executable not found'
+            ],
+            'directory_error': [
+                r'cannot read directory',
+                r'cannot list directory',
+                r'opendir.*failed',
+                r'directory not found',
+                r'chdir.*failed',
+                r'cannot create.*directory',
+                r'mkdir.*failed'
             ],
             'syntax_error': [
                 r'syntax error',
@@ -106,14 +118,14 @@ class AILogAnalyzer:
             }
         
         try:
-            # Get console logs
-            logger.debug(f"Fetching console logs for analysis (last 200 lines)")
+            # Get console logs - fetch more lines for comprehensive analysis
+            logger.debug(f"Fetching console logs for analysis (last 2000 lines)")
             console_log = ""
             if jenkins_service:
                 console_log = jenkins_service.get_console_log_tail(
                     build_log.job_name, 
                     build_log.build_number, 
-                    lines=200  # Get last 200 lines for analysis
+                    lines=2000  # Get last 2000 lines for comprehensive analysis
                 )
                 logger.info(f"Retrieved {len(console_log)} characters of console log")
             else:
@@ -230,48 +242,53 @@ class AILogAnalyzer:
                 job_name, build_number, console_log, target_server, quick_analysis
             )
 
-            # Use existing AI command generation with system context
-            ai_result = ask_ai_for_command(
-                analysis_prompt,
-                memory=self.memory.get(),
-                system_context=self.system_context,
+            # Call AI directly for log analysis (not via ask_ai_for_command)
+            client = get_openai_client()
+            messages = [
+                {"role": "system", "content": "You are an expert Jenkins/CI-CD log analyst specializing in identifying precise root causes of build failures."},
+                {"role": "user", "content": analysis_prompt}
+            ]
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                extra_query={"api-version": "2024-08-01-preview"},
+                temperature=0.1,  # Very low temperature for accurate analysis
+                response_format={"type": "json_object"}  # Require JSON output
             )
-            
-            if not ai_result or not ai_result.get('success'):
-                logger.warning("AI analysis failed, using fallback analysis")
-                return self._fallback_analysis(quick_analysis, console_log)
-            
-            ai_response = ai_result.get('ai_response', {})
-            analysis_text = ai_response.get('final_command', '') or ai_response.get('response', '')
 
-            # Prefer structured JSON if the model provided it
+            content = response.choices[0].message.content.strip()
+            logger.debug(f"Received AI response: {content[:500]}...")
+            
+            # Parse JSON response
             parsed_analysis = None
             try:
-                json_blob = self._extract_json_blob(analysis_text)
-                if json_blob:
-                    data = json.loads(json_blob)
-                    # Normalize expected keys
-                    parsed_analysis = {
-                        'error_summary': data.get('error_summary') or data.get('summary') or '',
-                        'root_cause': data.get('root_cause') or data.get('cause') or '',
-                        'confidence_score': float(data.get('confidence', data.get('confidence_score', 0.7))),
-                        'priority': (data.get('priority') or 'medium').lower(),
-                        'full_analysis': data.get('full_analysis') or analysis_text,
-                        # Helpful extras for future use
-                        'primary_error_line': data.get('primary_error_line'),
-                        'primary_error_excerpt': data.get('primary_error_excerpt'),
-                        'evidence': data.get('evidence') or [],
-                        'error_type': data.get('error_type')
-                    }
-            except Exception as e:
-                logger.debug(f"Failed to parse structured JSON from AI response: {e}")
-
+                data = json.loads(content)
+                # Normalize expected keys
+                parsed_analysis = {
+                    'error_summary': data.get('error_summary') or data.get('summary') or '',
+                    'root_cause': data.get('root_cause') or data.get('cause') or '',
+                    'confidence_score': float(data.get('confidence', data.get('confidence_score', 0.7))),
+                    'priority': (data.get('priority') or 'medium').lower(),
+                    'full_analysis': content,
+                    # Helpful extras for future use
+                    'primary_error_line': data.get('primary_error_line'),
+                    'primary_error_excerpt': data.get('primary_error_excerpt'),
+                    'evidence': data.get('evidence') or [],
+                    'error_type': data.get('error_type'),
+                    'failure_chain': data.get('failure_chain', [])
+                }
+                logger.info(f"Successfully parsed AI analysis for {job_name}#{build_number}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse structured JSON from AI response: {e}")
+                logger.debug(f"Raw response: {content}")
+                
             if not parsed_analysis:
                 # Fallback to legacy parser (pattern-based extraction from free text)
-                parsed_analysis = self._parse_ai_analysis(analysis_text, quick_analysis)
+                parsed_analysis = self._parse_ai_analysis(content, quick_analysis)
             
             # Store in conversation memory for context
-            self.memory.add(f"Build failure analysis for {job_name}#{build_number}", analysis_text)
+            self.memory.add(f"Build failure analysis for {job_name}#{build_number}", content)
             
             return parsed_analysis
             
@@ -305,46 +322,196 @@ class AILogAnalyzer:
     def _build_analysis_prompt(self, job_name: str, build_number: int, console_log: str,
                                target_server: Optional[str], quick_analysis: Dict[str, Any]) -> str:
         """Build the AI prompt for analyzing Jenkins build logs (JSON output requested)."""
-        # Provide both last N lines and last chars to give context without sending entire log
+        # Structured log preprocessing - create layers for better AI understanding
+        log_structure = self._preprocess_logs_for_analysis(console_log)
+        
+        # Get full context but in a smart, structured way
         lines = console_log.split('\n')
-        last_tail_lines = '\n'.join(lines[-200:]) if len(lines) > 200 else '\n'.join(lines)
-        last_chars = console_log[-3000:] if len(console_log) > 3000 else console_log
+        total_lines = len(lines)
+        
+        # Send more context - last 500 lines for better error detection
+        last_tail_lines = '\n'.join(lines[-500:]) if total_lines > 500 else '\n'.join(lines)
+        
+        # Also get first 100 lines for initialization context
+        first_lines = '\n'.join(lines[:100]) if total_lines > 100 else '\n'.join(lines)
 
         error_context = (
             f"Jenkins Job: {job_name}#{build_number}\n"
             f"Target Server: {target_server or 'Unknown'}\n"
-            f"Error Categories Found: {', '.join(quick_analysis.get('categories', []))}\n"
-            "Key Error Lines (heuristic):\n"
-            f"{chr(10).join(quick_analysis.get('error_lines', [])[:5])}\n\n"
-            "Console Log (tail, last ~200 lines):\n"
+            f"Total Log Lines: {total_lines}\n"
+            f"Error Categories Found (Pattern Analysis): {', '.join(quick_analysis.get('categories', []))}\n"
+            f"Error Line Count: {len(quick_analysis.get('error_lines', []))}\n\n"
+            "Key Error Lines (Pattern-Detected):\n"
+            f"{chr(10).join(quick_analysis.get('error_lines', [])[:10])}\n\n"
+            "Log Structure Analysis:\n"
+            f"  - Critical sections: {len(log_structure.get('critical_sections', []))}\n"
+            f"  - Error blocks: {len(log_structure.get('error_blocks', []))}\n"
+            f"  - Failure indicators: {len(log_structure.get('failure_indicators', []))}\n\n"
+            "Build Initialization (first 100 lines):\n"
+            f"{first_lines}\n\n"
+            "Build Termination (last 500 lines - most relevant):\n"
             f"{last_tail_lines}\n\n"
-            "Console Log (last ~3000 chars for extra context):\n"
-            f"{last_chars}\n"
+            "Critical Log Sections:\n"
+            f"{self._format_log_sections(log_structure.get('critical_sections', []))}\n"
         )
 
         analysis_prompt = (
-            "You are analyzing a Jenkins build failure. Identify the SINGLE most probable failing error that actually caused the build to fail.\n"
-            "Disregard subsequent cascading errors. Prefer the first terminal failure near the end of the log (e.g., Ansible fatal, non-zero exit, test failure, missing dependency).\n\n"
+            "You are an expert Jenkins/CI-CD log analyst specializing in identifying precise root causes. "
+            "Your job is to read the ENTIRE log carefully and identify the EXACT problem.\n\n"
+            "CRITICAL REQUIREMENTS:\n"
+            "1. READ THE FULL LOG - Do not jump to conclusions based on generic error messages\n"
+            "2. Identify the EXACT root cause (e.g., directory missing, permission denied, file not found)\n"
+            "3. Distinguish between root causes vs cascading errors\n"
+            "4. Trace the failure chain from the first error to the final failure\n\n"
             f"{error_context}\n"
+            "SPECIFIC ERROR TYPES TO LOOK FOR:\n"
+            "- Directory Issues: directory missing, cannot read directory, opendir failed, chdir failed\n"
+            "- Permission Issues: Permission denied, Access denied, EACCES, read-only filesystem, unable to write\n"
+            "- File Issues: file not found, cannot access file, No such file or directory\n"
+            "- Command Issues: command not found, non-zero exit code, execution failure\n"
+            "- Network Issues: Connection refused, Connection timed out, unreachable host\n"
+            "- Configuration Issues: invalid config, missing parameter, malformed YAML/JSON\n"
+            "- Ansible Specific: TASK FAILED, fatal error, unreachable hosts, permission denied\n\n"
+            "DIAGNOSIS APPROACH:\n"
+            "1. Read the log from START to END to understand the build flow\n"
+            "2. Find the FIRST error that actually broke the process\n"
+            "3. For file/directory errors, determine: Does it exist? Are permissions wrong? Is the path correct?\n"
+            "4. For permission errors, identify: Which file/directory? What operation was attempted?\n"
+            "5. For Ansible playbook errors, identify: Which task failed? What specific error occurred?\n"
+            "6. Provide detailed context about what was attempted and why it failed\n\n"
             "Respond ONLY with strict JSON (no markdown, no prose) in the following schema:\n"
             "{\n"
-            "  \"error_summary\": string,\n"
-            "  \"root_cause\": string,\n"
+            "  \"error_summary\": string (detailed explanation of what failed - include specific file paths, commands, etc.),\n"
+            "  \"root_cause\": string (comprehensive explanation of WHY it failed - NO word limit, be thorough),\n"
             "  \"confidence\": number (0.0-1.0),\n"
             "  \"priority\": \"low\"|\"medium\"|\"high\",\n"
             "  \"primary_error_line\": number | null,\n"
             "  \"primary_error_excerpt\": string,\n"
-            "  \"evidence\": [{\"line\": number, \"text\": string}] ,\n"
-            "  \"error_type\": string\n"
+            "  \"evidence\": [{\"line\": number, \"text\": string}],\n"
+            "  \"error_type\": string,\n"
+            "  \"failure_chain\": [{\"step\": number, \"description\": string}] (optional - trace how error propagated)\n"
             "}\n\n"
-            "Constraints:\n"
-            "- Choose exactly one primary_error_* corresponding to the trigger line that failed the build.\n"
-            "- If line numbers are unknown, set primary_error_line to null but include an excerpt.\n"
-            "- Keep error_summary concise (1-2 sentences).\n"
-            "- Root cause must be specific and actionable.\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "- Root cause MUST be comprehensive - explain the FULL context with all relevant details\n"
+            "- Include EXACT file paths, directory names, permission levels, or configurations involved\n"
+            "- NO artificial word limits - explain thoroughly and completely\n"
+            "- Use evidence array to cite SPECIFIC log lines that prove your analysis\n"
+            "- Be PRECISE: 'directory /var/log/app does not exist' vs 'permission denied on /var/log/app'\n"
+            "- AVOID generic explanations like 'Build failed due to ansible error' - be SPECIFIC\n"
         )
 
         return analysis_prompt
+    
+    def _preprocess_logs_for_analysis(self, console_log: str) -> Dict[str, Any]:
+        """Preprocess logs to extract critical sections for smarter AI analysis."""
+        lines = console_log.split('\n')
+        critical_sections = []
+        error_blocks = []
+        failure_indicators = []
+        
+        # Define section markers to identify important log regions
+        section_markers = {
+            'ansible_task': [r'TASK \[.*?\]', r'task \[.*?\]'],
+            'ansible_fatal': [r'fatal:.*?: FAILED', r'FAILED! =>'],
+            'build_failure': [r'Build step.*failed', r'Build failed'],
+            'execution_error': [r'ERROR:', r'FATAL:', r'Exception:', r'Error:'],
+            'permission_error': [
+                r'Permission denied', r'Access denied', r'EACCES', r'EAGAIN',
+                r'Operation not permitted', r'cannot open.*Permission denied',
+                r'unable to write', r'read-only', r'readonly'
+            ],
+            'file_error': [
+                r'No such file or directory', r'cannot access', r'file not found',
+                r'directory not found', r'path not found', r'No such path',
+                r'cannot create directory', r'cannot find.*file', r'not a directory',
+                r'NotADirectoryError', r'FileNotFoundError', r'Is a directory'
+            ],
+            'command_failed': [r'command.*failed', r'command not found', r'non-zero exit', r'exit code \d+'],
+            'connection_error': [r'Connection refused', r'Connection timed out', r'No route to host'],
+            'directory_error': [
+                r'cannot read directory', r'cannot list directory', r'opendir.*failed',
+                r'directory exists', r'cannot create.*directory', r'mkdir.*failed',
+                r'chdir.*failed'
+            ]
+        }
+        
+        # Track consecutive error lines to form error blocks
+        current_block = []
+        block_start_line = -1
+        
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Check for section markers
+            for section_type, patterns in section_markers.items():
+                for pattern in patterns:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        # Capture a window around this critical line
+                        start_idx = max(0, i - 3)
+                        end_idx = min(len(lines), i + 8)
+                        window_lines = lines[start_idx:end_idx]
+                        
+                        critical_sections.append({
+                            'type': section_type,
+                            'line': i + 1,
+                            'context': window_lines
+                        })
+                        
+                        # Track this in current error block
+                        if section_type in ['ansible_fatal', 'build_failure', 'execution_error']:
+                            if not current_block:
+                                block_start_line = i + 1
+                            current_block.append(line)
+                        break
+                else:
+                    continue
+                break
+            
+            # Check for failure indicators
+            if any(indicator in line_lower for indicator in ['failed', 'error', 'fatal', 'unreachable', 'aborted']):
+                failure_indicators.append({
+                    'line': i + 1,
+                    'text': line.strip()
+                })
+            
+            # Close error block if we've moved away from errors
+            if current_block and i > block_start_line + 20:  # Close block after 20 lines of silence
+                error_blocks.append({
+                    'start_line': block_start_line,
+                    'end_line': i,
+                    'lines': current_block
+                })
+                current_block = []
+                block_start_line = -1
+        
+        # Close any remaining error block
+        if current_block:
+            error_blocks.append({
+                'start_line': block_start_line if block_start_line > 0 else len(lines),
+                'end_line': len(lines),
+                'lines': current_block
+            })
+        
+        return {
+            'critical_sections': critical_sections[:20],  # Limit to top 20 to avoid overload
+            'error_blocks': error_blocks[:5],  # Top 5 error blocks
+            'failure_indicators': failure_indicators[:30]  # Top 30 indicators
+        }
+    
+    def _format_log_sections(self, sections: List[Dict[str, Any]]) -> str:
+        """Format critical log sections for inclusion in prompt."""
+        if not sections:
+            return "  (none detected)"
+        
+        formatted = []
+        for section in sections:
+            context_lines = '\n    '.join(section['context'][:5])  # Show first 5 lines of context
+            formatted.append(
+                f"  [{section['type']}] Line {section['line']}:\n"
+                f"    {context_lines}"
+            )
+        
+        return '\n'.join(formatted[:10])  # Limit to first 10 sections
 
     def _extract_json_blob(self, text: str) -> Optional[str]:
         """Extract the first JSON object string from text, if present."""
@@ -382,6 +549,8 @@ class AILogAnalyzer:
             root_cause = "System service failed to start or restart"
         elif 'permission_denied' in categories:
             root_cause = "Insufficient permissions for required operations"
+        elif 'directory_error' in categories:
+            root_cause = "Directory access issue - directory may not exist or have incorrect permissions"
         elif 'connection_failed' in categories:
             root_cause = "Network connection issues or unreachable host"
         elif 'ansible_error' in categories:
