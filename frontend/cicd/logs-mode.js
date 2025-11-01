@@ -25,14 +25,23 @@ class LogsMode {
     
     initializeUI() {
         // Logs container is now in HTML, just set up event listeners
-        // Use a longer delay to ensure all DOM elements are ready
         this.setupEventListeners();
-        // Re-bind when mode changes
-        document.addEventListener('mode:changed', (e) => {
+        
+        // Clean up old listener if it exists
+        if (this._modeChangeListener) {
+            document.removeEventListener('mode:changed', this._modeChangeListener);
+        }
+        
+        // Store listener reference for cleanup
+        this._modeChangeListener = (e) => {
             if (e.detail && e.detail.mode === 'logs') {
-                this.setupEventListeners();
+                this.cleanupEventListeners(); // Clean up old listeners
+                this.setupEventListeners();   // Set up new ones
             }
-        });
+        };
+        
+        // Add new listener
+        document.addEventListener('mode:changed', this._modeChangeListener);
     }
     
     getLogsUIHTML() {
@@ -89,9 +98,24 @@ class LogsMode {
         `;
     }
     
+    cleanupEventListeners() {
+        // Remove fetch console button listener
+        const fetchConsoleBtn = document.getElementById('fetch-console-btn');
+        if (fetchConsoleBtn) {
+            fetchConsoleBtn.replaceWith(fetchConsoleBtn.cloneNode(true));
+        }
+        
+        // Clean up config selection listeners
+        ['jenkins-config-select', 'ansible-config-select'].forEach(id => {
+            const select = document.getElementById(id);
+            if (select) {
+                select.replaceWith(select.cloneNode(true));
+            }
+        });
+    }
+
     setupEventListeners() {
-        // Note: Configure buttons are wired via inline onclick in index.html (openJenkinsConfigModal/openAnsibleConfigModal)
-        // Avoid attaching duplicate handlers here to prevent multiple modals.
+        this.cleanupEventListeners(); // Clean up any existing listeners first
         
         // Fetch console button
         const fetchConsoleBtn = document.getElementById('fetch-console-btn');
@@ -552,6 +576,66 @@ class LogsMode {
         return text.replace(/[&<>"']/g, m => map[m]);
     }
     
+    renderVisibleLogLines(container, logLines, startIndex, visibleLines, lineHeight) {
+        const buffer = 10; // Extra lines to render above/below viewport
+        const start = Math.max(0, startIndex - buffer);
+        const end = Math.min(logLines.length, startIndex + visibleLines + buffer);
+        
+        // Create lines HTML
+        const linesHtml = document.createElement('div');
+        for (let i = start; i < end; i++) {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.style.position = 'absolute';
+            line.style.top = `${i * lineHeight}px`;
+            line.style.left = '0';
+            line.style.right = '0';
+            line.style.height = `${lineHeight}px`;
+            line.textContent = logLines[i];
+            
+            // Add line number
+            const lineNum = document.createElement('span');
+            lineNum.className = 'line-number';
+            lineNum.textContent = `${i + 1}`;
+            line.insertBefore(lineNum, line.firstChild);
+            
+            linesHtml.appendChild(line);
+        }
+        
+        // Replace content
+        container.innerHTML = '';
+        container.appendChild(linesHtml);
+    }
+
+    appendLogsToModal(newLogs) {
+        const consoleLog = document.querySelector('.console-log pre');
+        if (consoleLog) {
+            consoleLog.textContent += '\n' + newLogs;
+            // Scroll to bottom of new content
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+    }
+
+    addLoadMoreLogsButton(buildId, nextOffset) {
+        const consoleLog = document.querySelector('.console-log');
+        if (!consoleLog) return;
+        
+        // Remove existing button if any
+        const existingBtn = document.getElementById('load-more-logs');
+        if (existingBtn) existingBtn.remove();
+        
+        const loadMoreBtn = document.createElement('button');
+        loadMoreBtn.id = 'load-more-logs';
+        loadMoreBtn.className = 'load-more-btn';
+        loadMoreBtn.textContent = 'Load More Logs';
+        
+        loadMoreBtn.addEventListener('click', () => {
+            this.viewBuildLogs(buildId, nextOffset);
+        });
+        
+        consoleLog.parentNode.insertBefore(loadMoreBtn, consoleLog.nextSibling);
+    }
+    
     displayBuilds(builds) {
         const buildsList = document.getElementById('builds-list');
         const noBuildsMessage = document.getElementById('no-builds-message');
@@ -638,21 +722,55 @@ class LogsMode {
         });
     }
     
-    async viewBuildLogs(buildId) {
-        if (!this.currentJenkinsConfig) return;
+    async viewBuildLogs(buildId, offset = 0) {
+        if (!this.currentJenkinsConfig) {
+            window.appendMessage('Please configure Jenkins connection first', 'system');
+            return;
+        }
+        
+        // Show loading indicator
+        const loadingEl = document.createElement('div');
+        loadingEl.className = 'logs-loading';
+        loadingEl.innerHTML = '<span class="spinner"></span> Loading build logs...';
+        document.body.appendChild(loadingEl);
         
         try {
-            const response = await fetch(`/cicd/builds/${buildId}/logs?jenkins_config_id=${this.currentJenkinsConfig}&lines=200`);
+            // Request logs with pagination support
+            const response = await fetch(
+                `/cicd/builds/${buildId}/logs?` + 
+                `jenkins_config_id=${this.currentJenkinsConfig}&` +
+                `lines=1000&offset=${offset}`
+            );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
             const data = await response.json();
             
             if (data.success) {
-                this.showLogsModal(data.build, data.console_log);
+                if (offset === 0) {
+                    // First page - show modal
+                    this.showLogsModal(data.build, data.console_log);
+                } else {
+                    // Append to existing modal
+                    this.appendLogsToModal(data.console_log);
+                }
+                
+                // If there are more logs, add load more button
+                if (data.has_more) {
+                    this.addLoadMoreLogsButton(buildId, offset + 1000);
+                }
             } else {
-                window.appendMessage(`Failed to load logs: ${data.error}`, 'system');
+                const error = data.error || 'Unknown error occurred';
+                window.appendMessage(`Failed to load logs: ${error}`, 'system');
             }
             
         } catch (error) {
             window.appendMessage(`Error loading logs: ${error.message}`, 'system');
+        } finally {
+            // Remove loading indicator
+            loadingEl.remove();
         }
     }
     
@@ -666,6 +784,10 @@ class LogsMode {
             document.body.appendChild(modal);
         }
         
+        // Split logs into lines for virtualization
+        const logLines = (consoleLog || 'No console log available').split('\n');
+        const totalLines = logLines.length;
+        
         modal.innerHTML = `
             <div class="modal-content large">
                 <div class="modal-header">
@@ -677,13 +799,39 @@ class LogsMode {
                         <span><strong>Status:</strong> <span class="status-badge ${build.status.toLowerCase()}">${build.status}</span></span>
                         <span><strong>Duration:</strong> ${build.duration ? Math.round(build.duration / 1000) + 's' : 'N/A'}</span>
                         <span><strong>Started:</strong> ${build.started_at ? new Date(build.started_at).toLocaleString() : 'N/A'}</span>
+                        <span><strong>Log Lines:</strong> ${totalLines}</span>
                     </div>
-                    <div class="console-log">
-                        <pre>${consoleLog || 'No console log available'}</pre>
+                    <div class="console-log" id="virtual-console-log">
+                        <div class="log-content" style="position: relative;"></div>
                     </div>
                 </div>
             </div>
         `;
+        
+        // Setup virtual scrolling
+        const virtualConsole = document.getElementById('virtual-console-log');
+        const logContent = virtualConsole.querySelector('.log-content');
+        const lineHeight = 20; // px
+        const visibleLines = Math.ceil(virtualConsole.clientHeight / lineHeight);
+        let lastScrollTop = 0;
+        
+        // Set content height
+        logContent.style.height = `${totalLines * lineHeight}px`;
+        
+        // Initial render
+        this.renderVisibleLogLines(logContent, logLines, 0, visibleLines, lineHeight);
+        
+        // Handle scroll
+        virtualConsole.addEventListener('scroll', () => {
+            const scrollTop = virtualConsole.scrollTop;
+            const startIndex = Math.floor(scrollTop / lineHeight);
+            
+            // Only re-render if scrolled to new lines
+            if (Math.abs(scrollTop - lastScrollTop) >= lineHeight) {
+                this.renderVisibleLogLines(logContent, logLines, startIndex, visibleLines, lineHeight);
+                lastScrollTop = scrollTop;
+            }
+        });
         
         modal.classList.remove('hidden');
         

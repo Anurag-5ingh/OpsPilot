@@ -1447,14 +1447,26 @@ def get_build_logs(build_id):
     
     Query parameters:
     - jenkins_config_id: ID of Jenkins configuration
-    - lines: Number of lines to fetch (default 100)
+    - lines: Number of lines to fetch (default 100, max 5000)
+    - offset: Line number to start from (for pagination)
     """
     try:
         jenkins_config_id = request.args.get('jenkins_config_id')
         lines = int(request.args.get('lines', 100))
+        offset = int(request.args.get('offset', 0))
         
+        # Validate parameters
         if not jenkins_config_id:
             return jsonify({"error": "jenkins_config_id is required"}), 400
+            
+        if lines < 1:
+            return jsonify({"error": "lines must be positive"}), 400
+            
+        if lines > 5000:
+            lines = 5000  # Cap maximum lines per request
+            
+        if offset < 0:
+            return jsonify({"error": "offset must be non-negative"}), 400
         
         # Get build log
         build_log = BuildLog.get_by_id(build_id)
@@ -1469,18 +1481,44 @@ def get_build_logs(build_id):
         jenkins_service = JenkinsService(jenkins_config)
         
         try:
-            # Get console logs
-            console_log = jenkins_service.get_console_log_tail(
+            # Get console logs with pagination
+            log_text = jenkins_service.get_console_log_tail(
                 build_log.job_name, 
-                build_log.build_number, 
-                lines
+                build_log.build_number,
+                lines + offset  # Get enough lines for offset
             )
+            
+            if log_text is None:
+                return jsonify({"error": "Failed to retrieve logs"}), 500
+            
+            # Split into lines and apply offset/limit
+            log_lines = log_text.splitlines()
+            total_lines = len(log_lines)
+            
+            if offset >= total_lines:
+                return jsonify({
+                    "success": True,
+                    "build": build_log.to_dict(),
+                    "console_log": "",
+                    "log_lines": total_lines,
+                    "has_more": False
+                }), 200
+            
+            # Get the requested chunk
+            chunk = log_lines[offset:offset + lines]
+            chunk_text = '\n'.join(chunk)
+            
+            # Check if there are more lines available
+            has_more = (offset + lines) < total_lines
             
             return jsonify({
                 "success": True,
                 "build": build_log.to_dict(),
-                "console_log": console_log,
-                "log_lines": len(console_log.split('\n')) if console_log else 0
+                "console_log": chunk_text,
+                "log_lines": total_lines,
+                "current_offset": offset,
+                "lines_in_chunk": len(chunk),
+                "has_more": has_more
             }), 200
             
         finally:
