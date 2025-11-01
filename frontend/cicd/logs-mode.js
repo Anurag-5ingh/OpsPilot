@@ -637,7 +637,18 @@ class LogsMode {
         window.setButtonLoading(analyzeBtn, true);
         analyzeBtn.disabled = true; // Prevent multiple clicks
         
-        const resultsDiv = document.getElementById('analysis-results');
+        let resultsDiv = document.getElementById('analysis-results');
+        if (!resultsDiv) {
+            const consoleSection = document.getElementById('embedded-console-section');
+            if (consoleSection) resultsDiv = consoleSection.querySelector('#analysis-results');
+        }
+        if (!resultsDiv) {
+            console.error('[LogsMode] analysis-results container not found');
+            showToast('Unable to show analysis area. Please try reloading the Logs tab.', 'error');
+            window.setButtonLoading(analyzeBtn, false);
+            analyzeBtn.disabled = false;
+            return;
+        }
         resultsDiv.innerHTML = '<div class="loading">Analyzing console log for errors and solutions...</div>';
         resultsDiv.classList.remove('hidden');
         
@@ -684,6 +695,7 @@ class LogsMode {
             resultsDiv.innerHTML = `<div class=\"error\">Error analyzing console: ${error.message}</div>`;
         } finally {
             window.setButtonLoading(analyzeBtn, false);
+            analyzeBtn.disabled = false;
         }
     }
     
@@ -725,6 +737,7 @@ class LogsMode {
     }
     
     escapeHtml(text) {
+        if (text === null || text === undefined) return '';
         const map = {
             '&': '&amp;',
             '<': '&lt;',
@@ -732,7 +745,8 @@ class LogsMode {
             '"': '&quot;',
             "'": '&#039;'
         };
-        return text.replace(/[&<>"']/g, m => map[m]);
+        const s = String(text);
+        return s.replace(/[&<>"']/g, m => map[m]);
     }
     
     renderVisibleLogLines(container, logLines, startIndex, visibleLines, lineHeight) {
