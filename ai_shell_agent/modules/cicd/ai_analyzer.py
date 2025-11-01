@@ -7,6 +7,7 @@ and generate suggested fix commands for automated troubleshooting.
 
 import logging
 import re
+import json
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
 
@@ -242,9 +243,32 @@ class AILogAnalyzer:
             
             ai_response = ai_result.get('ai_response', {})
             analysis_text = ai_response.get('final_command', '') or ai_response.get('response', '')
-            
-            # Parse AI response to extract structured data
-            parsed_analysis = self._parse_ai_analysis(analysis_text, quick_analysis)
+
+            # Prefer structured JSON if the model provided it
+            parsed_analysis = None
+            try:
+                json_blob = self._extract_json_blob(analysis_text)
+                if json_blob:
+                    data = json.loads(json_blob)
+                    # Normalize expected keys
+                    parsed_analysis = {
+                        'error_summary': data.get('error_summary') or data.get('summary') or '',
+                        'root_cause': data.get('root_cause') or data.get('cause') or '',
+                        'confidence_score': float(data.get('confidence', data.get('confidence_score', 0.7))),
+                        'priority': (data.get('priority') or 'medium').lower(),
+                        'full_analysis': data.get('full_analysis') or analysis_text,
+                        # Helpful extras for future use
+                        'primary_error_line': data.get('primary_error_line'),
+                        'primary_error_excerpt': data.get('primary_error_excerpt'),
+                        'evidence': data.get('evidence') or [],
+                        'error_type': data.get('error_type')
+                    }
+            except Exception as e:
+                logger.debug(f"Failed to parse structured JSON from AI response: {e}")
+
+            if not parsed_analysis:
+                # Fallback to legacy parser (pattern-based extraction from free text)
+                parsed_analysis = self._parse_ai_analysis(analysis_text, quick_analysis)
             
             # Store in conversation memory for context
             self.memory.add(f"Build failure analysis for {job_name}#{build_number}", analysis_text)
@@ -280,29 +304,63 @@ class AILogAnalyzer:
 
     def _build_analysis_prompt(self, job_name: str, build_number: int, console_log: str,
                                target_server: Optional[str], quick_analysis: Dict[str, Any]) -> str:
-        """Build the AI prompt for analyzing Jenkins build logs."""
+        """Build the AI prompt for analyzing Jenkins build logs (JSON output requested)."""
+        # Provide both last N lines and last chars to give context without sending entire log
+        lines = console_log.split('\n')
+        last_tail_lines = '\n'.join(lines[-200:]) if len(lines) > 200 else '\n'.join(lines)
+        last_chars = console_log[-3000:] if len(console_log) > 3000 else console_log
+
         error_context = (
             f"Jenkins Job: {job_name}#{build_number}\n"
             f"Target Server: {target_server or 'Unknown'}\n"
             f"Error Categories Found: {', '.join(quick_analysis.get('categories', []))}\n"
-            "Key Error Lines:\n"
+            "Key Error Lines (heuristic):\n"
             f"{chr(10).join(quick_analysis.get('error_lines', [])[:5])}\n\n"
-            "Console Log (last part):\n"
-            f"{console_log[-2000:] if len(console_log) > 2000 else console_log}\n"
+            "Console Log (tail, last ~200 lines):\n"
+            f"{last_tail_lines}\n\n"
+            "Console Log (last ~3000 chars for extra context):\n"
+            f"{last_chars}\n"
         )
 
         analysis_prompt = (
-            "Analyze this Jenkins build failure and provide a structured analysis:\n\n"
+            "You are analyzing a Jenkins build failure. Identify the SINGLE most probable failing error that actually caused the build to fail.\n"
+            "Disregard subsequent cascading errors. Prefer the first terminal failure near the end of the log (e.g., Ansible fatal, non-zero exit, test failure, missing dependency).\n\n"
             f"{error_context}\n"
-            "Please analyze this build failure and provide:\n"
-            "1. A concise error summary (1-2 sentences)\n"
-            "2. The most likely root cause\n"
-            "3. Confidence score (0.0 to 1.0)\n"
-            "4. Priority level (low/medium/high)\n\n"
-            "Focus on actionable insights that could help fix the issue.\n"
+            "Respond ONLY with strict JSON (no markdown, no prose) in the following schema:\n"
+            "{\n"
+            "  \"error_summary\": string,\n"
+            "  \"root_cause\": string,\n"
+            "  \"confidence\": number (0.0-1.0),\n"
+            "  \"priority\": \"low\"|\"medium\"|\"high\",\n"
+            "  \"primary_error_line\": number | null,\n"
+            "  \"primary_error_excerpt\": string,\n"
+            "  \"evidence\": [{\"line\": number, \"text\": string}] ,\n"
+            "  \"error_type\": string\n"
+            "}\n\n"
+            "Constraints:\n"
+            "- Choose exactly one primary_error_* corresponding to the trigger line that failed the build.\n"
+            "- If line numbers are unknown, set primary_error_line to null but include an excerpt.\n"
+            "- Keep error_summary concise (1-2 sentences).\n"
+            "- Root cause must be specific and actionable.\n"
         )
 
         return analysis_prompt
+
+    def _extract_json_blob(self, text: str) -> Optional[str]:
+        """Extract the first JSON object string from text, if present."""
+        if not text:
+            return None
+        try:
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                candidate = text[start:end+1].strip()
+                # Quick validation
+                json.loads(candidate)
+                return candidate
+        except Exception:
+            return None
+        return None
     
     def _fallback_analysis(self, quick_analysis: Dict[str, Any], console_log: str) -> Dict[str, Any]:
         """Provide fallback analysis when AI fails."""
