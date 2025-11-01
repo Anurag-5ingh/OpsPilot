@@ -927,7 +927,7 @@ class LogsMode {
             
         } catch (error) {
             showToast(`Error loading logs: ${error.message}`, 'error');
-        }
+        } finally {
             // Remove loading indicator
             loadingEl.remove();
         }
