@@ -718,22 +718,7 @@ class LogsMode {
                 </div>
             </div>
             
-            ${analysis.suggested_commands && analysis.suggested_commands.length > 0 ? `
-                <div class="suggested-fixes">
-                    <h4>💡 Suggested Fixes</h4>
-                    <div class="fixes-list">
-                        ${analysis.suggested_commands.map((cmd, i) => `
-                            <div class="fix-item">
-                                <span class="fix-number">${i + 1}.</span>
-                                <code>${this.escapeHtml(cmd)}</code>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <p class="note"><em>Note: These are suggested commands for reference. Please review before executing manually.</em></p>
-                </div>
-            ` : ''}
-
-            ${(!analysis.suggested_commands || analysis.suggested_commands.length === 0) && analysis.suggested_steps && analysis.suggested_steps.length > 0 ? `
+            ${analysis.suggested_steps && analysis.suggested_steps.length > 0 ? `
                 <div class="suggested-steps">
                     <h4>📝 Suggested Steps</h4>
                     <ol class="steps-list">
@@ -741,7 +726,7 @@ class LogsMode {
                             <li class="step-item">${this.escapeHtml(step)}</li>
                         `).join('')}
                     </ol>
-                    <p class="note"><em>Note: Steps are provided when a direct command is not clear or safe. Review and adapt as needed.</em></p>
+                    <p class="note"><em>These are AI-suggested steps based on the detected root cause and error summary.</em></p>
                 </div>
             ` : ''}
             
@@ -1010,7 +995,9 @@ class LogsMode {
         let lastScrollTop = 0;
         
         // Set content height
-        logContent.style.height = `${totalLines * lineHeight}px`;
+        // Add extra bottom space so the last lines aren't hidden under the viewport/borders
+        const extraBottom = lineHeight * 3; // spacer for comfortable scrolling past the last line
+        logContent.style.height = `${(totalLines * lineHeight) + extraBottom}px`;
         
         // Initial render
         this.renderVisibleLogLines(logContent, logLines, 0, visibleLines, lineHeight);
