@@ -555,6 +555,23 @@
   background: #f8f9fa;
 }
 
+/* Ensure analysis results are readable within dark console container */
+#analysis-results {
+  color: #000 !important;
+}
+#analysis-results h4,
+#analysis-results p,
+#analysis-results div,
+#analysis-results span,
+#analysis-results li {
+  color: #000 !important;
+}
+#analysis-results pre,
+#analysis-results code {
+  background: #fff;
+  color: #000 !important;
+}
+
 .analysis-summary {
   margin-bottom: 1rem;
   padding: 1rem;
