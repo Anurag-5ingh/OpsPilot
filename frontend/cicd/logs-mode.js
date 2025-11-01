@@ -685,6 +685,14 @@ class LogsMode {
             // Normalize analysis payload
             const analysis = data.analysis || data;
             if (analysis && (analysis.success === undefined || analysis.success === true)) {
+                try {
+                    console.log('[LogsMode] Analysis received', {
+                        hasAnalysis: !!analysis,
+                        suggestedCommandsCount: (analysis.suggested_commands || []).length,
+                        suggestedStepsCount: (analysis.suggested_steps || []).length,
+                        hasPlaybook: !!analysis.suggested_playbook
+                    });
+                } catch (_) {}
                 this.displayAnalysisResults(analysis, resultsDiv);
             } else {
                 resultsDiv.innerHTML = `<div class=\"error\">Analysis failed: ${analysis.error || data.error || 'Unknown error'}</div>`;
@@ -724,6 +732,18 @@ class LogsMode {
                     <p class="note"><em>Note: These are suggested commands for reference. Please review before executing manually.</em></p>
                 </div>
             ` : ''}
+
+            ${(!analysis.suggested_commands || analysis.suggested_commands.length === 0) && analysis.suggested_steps && analysis.suggested_steps.length > 0 ? `
+                <div class="suggested-steps">
+                    <h4>📝 Suggested Steps</h4>
+                    <ol class="steps-list">
+                        ${analysis.suggested_steps.map(step => `
+                            <li class="step-item">${this.escapeHtml(step)}</li>
+                        `).join('')}
+                    </ol>
+                    <p class="note"><em>Note: Steps are provided when a direct command is not clear or safe. Review and adapt as needed.</em></p>
+                </div>
+            ` : ''}
             
             ${analysis.suggested_playbook ? `
                 <div class="suggested-playbook">
@@ -733,6 +753,7 @@ class LogsMode {
             ` : ''}
         `;
         
+        try { console.log('[LogsMode] Rendering analysis results'); } catch (_) {}
         container.innerHTML = resultsHTML;
     }
     
