@@ -85,6 +85,29 @@ class LogsMode {
                             <span class="spinner hidden"></span>
                         </button>
                     </div>
+
+                    <!-- Embedded console log section -->
+                    <div id="embedded-console-section" class="embedded-console-section hidden">
+                        <div class="console-container">
+                            <div class="console-header">
+                                <h3 id="console-title">Console Log</h3>
+                                <button id="close-console-btn" class="close-btn" aria-label="Close">×</button>
+                            </div>
+                            <div class="console-content">
+                                <div class="build-info" id="console-build-info"></div>
+                                <div class="console-log">
+                                    <pre id="console-output"></pre>
+                                </div>
+                                <div class="console-actions">
+                                    <button id="analyze-console-btn" class="primary-btn">
+                                        <span class="btn-text">🔍 Analyze & Suggest Fix</span>
+                                        <span class="spinner hidden"></span>
+                                    </button>
+                                </div>
+                                <div id="analysis-results" class="analysis-results hidden"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -412,99 +435,75 @@ class LogsMode {
     }
 
     showConsoleLogModal(logData) {
-        // Remove any existing modal first
-        const existingModal = document.getElementById('console-log-modal');
-        if (existingModal) {
-            existingModal.remove();
+        const consoleSection = document.getElementById('embedded-console-section');
+        if (!consoleSection) return;
+
+        // Update console title
+        const title = document.getElementById('console-title');
+        if (title) {
+            title.textContent = `Console Log: ${logData.job_name} #${logData.build_number}`;
         }
-        
-        const modalHTML = `
-            <div class="modal-overlay" id="console-log-modal">
-                <div class="modal-content large">
-                    <div class="modal-header">
-                        <h3>Console Log: ${logData.job_name} #${logData.build_number}</h3>
-                        <button class="modal-close" id="console-modal-close" aria-label="Close">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="build-info">
-                            <div><strong>Job:</strong> ${logData.job_name}</div>
-                            <div><strong>Build:</strong> #${logData.build_number}</div>
-                            <div><strong>Source:</strong> <a href="${logData.original_url}" target="_blank">View in Jenkins</a></div>
-                        </div>
-                        <div class="console-log">
-                            <pre id="console-output">${this.escapeHtml(logData.console_log)}</pre>
-                        </div>
-                        <div class="console-actions">
-                            <button id="analyze-console-btn" class="primary-btn">
-                                <span class="btn-text">🔍 Analyze & Suggest Fix</span>
-                                <span class="spinner hidden"></span>
-                            </button>
-                        </div>
-                        <div id="analysis-results" class="analysis-results hidden">
-                            <!-- Analysis results will be inserted here -->
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button id="console-close-btn" class="secondary-btn">Close</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
-        const modal = document.getElementById('console-log-modal');
-        if (!modal) return;
-        
+
+        // Update build info
+        const buildInfo = document.getElementById('console-build-info');
+        if (buildInfo) {
+            buildInfo.innerHTML = `
+                <div><strong>Job:</strong> ${logData.job_name}</div>
+                <div><strong>Build:</strong> #${logData.build_number}</div>
+                <div><strong>Source:</strong> <a href="${logData.original_url}" target="_blank">View in Jenkins</a></div>
+            `;
+        }
+
+        // Update console output
+        const output = document.getElementById('console-output');
+        if (output) {
+            output.textContent = this.escapeHtml(logData.console_log);
+        }
+
         // Store log data for analysis
-        try {
-            modal.dataset.logPayload = JSON.stringify({
-                job_name: logData.job_name,
-                build_number: logData.build_number,
-                console_log: logData.console_log
-            });
-        } catch (err) {
-            console.warn('[LogsMode] Failed to attach modal payload', err);
-        }
-        
-        // Single close function for all close actions
-        const closeModal = (e) => {
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            modal.remove();
-        };
-        
-        // Single event handler for all close actions
-        modal.addEventListener('click', (e) => {
-            const target = e.target;
-            if (target === modal || // Click on overlay
-                target.id === 'console-modal-close' || // Click on X button
-                target.id === 'console-close-btn' || // Click on Close button
-                target.closest('#console-modal-close') || // Click on X button content
-                target.closest('#console-close-btn')) { // Click on Close button content
-                closeModal(e);
-            }
+        consoleSection.dataset.logPayload = JSON.stringify({
+            job_name: logData.job_name,
+            build_number: logData.build_number,
+            console_log: logData.console_log
         });
-        
-        // Set up analyze button
-        const analyzeBtn = modal.querySelector('#analyze-console-btn');
+
+        // Show the console section
+        consoleSection.classList.remove('hidden');
+
+        // Setup close button
+        const closeBtn = document.getElementById('close-console-btn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                consoleSection.classList.add('hidden');
+                // Clear the content when closing
+                if (output) output.textContent = '';
+                if (buildInfo) buildInfo.innerHTML = '';
+                const analysisResults = document.getElementById('analysis-results');
+                if (analysisResults) analysisResults.innerHTML = '';
+                analysisResults.classList.add('hidden');
+            };
+        }
+
+        // Setup analyze button
+        const analyzeBtn = document.getElementById('analyze-console-btn');
         if (analyzeBtn) {
-            analyzeBtn.addEventListener('click', async (e) => {
+            // Remove any existing listener
+            const newAnalyzeBtn = analyzeBtn.cloneNode(true);
+            analyzeBtn.parentNode.replaceChild(newAnalyzeBtn, analyzeBtn);
+            
+            newAnalyzeBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 try {
-                    await this.analyzeConsoleLog(logData, analyzeBtn);
+                    await this.analyzeConsoleLog(logData, newAnalyzeBtn);
                 } catch (error) {
                     console.error('[LogsMode] Error in analyze button:', error);
                 }
             });
         }
-        
-        // Set modal styles
-        modal.style.zIndex = '10050';
-        modal.style.display = 'block';
+
+        // Scroll the console section into view
+        consoleSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         
     }
     
