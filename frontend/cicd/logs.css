@@ -551,10 +551,11 @@
   margin-top: 1rem;
   padding: 1rem;
   border: 1px solid #dee2e6;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-bottom: 1rem;
   border-radius: 8px;
   background: #f8f9fa;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
 /* Custom scrollbar for analysis results */
