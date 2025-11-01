@@ -128,6 +128,15 @@ class LogsMode {
         if (fetchConsoleBtn) {
             fetchConsoleBtn.replaceWith(fetchConsoleBtn.cloneNode(true));
         }
+        // Remove config buttons listeners
+        const cfgJenkinsBtn = document.getElementById('config-jenkins-btn');
+        if (cfgJenkinsBtn) {
+            cfgJenkinsBtn.replaceWith(cfgJenkinsBtn.cloneNode(true));
+        }
+        const cfgAnsibleBtn = document.getElementById('config-ansible-btn');
+        if (cfgAnsibleBtn) {
+            cfgAnsibleBtn.replaceWith(cfgAnsibleBtn.cloneNode(true));
+        }
         
         // Clean up config selection listeners
         ['jenkins-config-select', 'ansible-config-select'].forEach(id => {
@@ -141,28 +150,36 @@ class LogsMode {
     setupEventListeners() {
         this.cleanupEventListeners(); // Clean up any existing listeners first
         
-        // Configure Jenkins button
-        const configJenkinsBtn = document.getElementById('config-jenkins-btn');
-        if (configJenkinsBtn) {
-            configJenkinsBtn.addEventListener('click', () => {
-                this.showJenkinsConfigModal();
-            });
-        }
-        
-        // Configure Ansible button
-        const configAnsibleBtn = document.getElementById('config-ansible-btn');
-        if (configAnsibleBtn) {
-            configAnsibleBtn.addEventListener('click', () => {
-                this.showAnsibleConfigModal();
-            });
-        }
-        
         // Fetch console button
         const fetchConsoleBtn = document.getElementById('fetch-console-btn');
         if (fetchConsoleBtn) {
             fetchConsoleBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.fetchConsoleFromUrl();
+            });
+        }
+
+        // Config buttons (ensure working even if inline onclick fails)
+        const cfgJenkinsBtn = document.getElementById('config-jenkins-btn');
+        if (cfgJenkinsBtn) {
+            cfgJenkinsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (typeof this.showJenkinsConfigModal === 'function') {
+                    this.showJenkinsConfigModal();
+                } else if (typeof window.openJenkinsConfigModal === 'function') {
+                    window.openJenkinsConfigModal();
+                }
+            });
+        }
+        const cfgAnsibleBtn = document.getElementById('config-ansible-btn');
+        if (cfgAnsibleBtn) {
+            cfgAnsibleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (typeof this.showAnsibleConfigModal === 'function') {
+                    this.showAnsibleConfigModal();
+                } else if (typeof window.openAnsibleConfigModal === 'function') {
+                    window.openAnsibleConfigModal();
+                }
             });
         }
         
