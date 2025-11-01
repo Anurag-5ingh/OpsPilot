@@ -79,29 +79,30 @@ class LogsMode {
                             <span class="spinner hidden"></span>
                         </button>
                     </div>
+                </div>
 
-                    <!-- Embedded console log section -->
-                    <div id="embedded-console-section" class="embedded-console-section hidden">
-                        <div class="console-container">
-                            <div class="console-header">
-                                <h3 id="console-title">Console Log</h3>
-                                <button id="close-console-btn" class="close-btn" aria-label="Close">×</button>
+                <!-- Embedded console log section -->
+                <div id="embedded-console-section" class="embedded-console-section hidden" style="width: 100%;">
+                    <div class="console-container">
+                        <div class="console-header">
+                            <h3 id="console-title">Console Log</h3>
+                            <button id="close-console-btn" class="close-btn" aria-label="Close">×</button>
+                        </div>
+                        <div class="console-content">
+                            <div class="build-info" id="console-build-info"></div>
+                            <div class="console-log">
+                                <pre id="console-output"></pre>
                             </div>
-                            <div class="console-content">
-                                <div class="build-info" id="console-build-info"></div>
-                                <div class="console-log">
-                                    <pre id="console-output"></pre>
-                                </div>
-                                <div class="console-actions">
-                                    <button id="analyze-console-btn" class="primary-btn">
-                                        <span class="btn-text">🔍 Analyze & Suggest Fix</span>
-                                        <span class="spinner hidden"></span>
-                                    </button>
-                                </div>
-                                <div id="analysis-results" class="analysis-results hidden"></div>
+                            <div class="console-actions">
+                                <button id="analyze-console-btn" class="primary-btn">
+                                    <span class="btn-text">🔍 Analyze & Suggest Fix</span>
+                                    <span class="spinner hidden"></span>
+                                </button>
                             </div>
+                            <div id="analysis-results" class="analysis-results hidden"></div>
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
             
@@ -371,83 +372,104 @@ class LogsMode {
             });
             
             const data = await response.json();
+            console.log('Received response:', data); // Debug log
             
             if (data.success) {
                 // Show the embedded console section with the logs
                 const consoleSection = document.getElementById('embedded-console-section');
-                if (consoleSection) {
-                    // Update title
-                    const title = document.getElementById('console-title');
-                    if (title) {
-                        title.textContent = `Console Log: ${data.job_name} #${data.build_number}`;
-                    }
-
-                    // Update build info
-                    const buildInfo = document.getElementById('console-build-info');
-                    if (buildInfo) {
-                        buildInfo.innerHTML = `
-                            <div><strong>Job:</strong> ${data.job_name}</div>
-                            <div><strong>Build:</strong> #${data.build_number}</div>
-                            <div><strong>Source:</strong> <a href="${consoleUrl}" target="_blank">View in Jenkins</a></div>
-                        `;
-                    }
-
-                    // Update console output
-                    const output = document.getElementById('console-output');
-                    if (output) {
-                        output.textContent = this.escapeHtml(data.console_log);
-                    }
-
-                    // Store log data for analysis
-                    consoleSection.dataset.logPayload = JSON.stringify({
-                        job_name: data.job_name,
-                        build_number: data.build_number,
-                        console_log: data.console_log
-                    });
-
-                    // Show the console section
-                    consoleSection.classList.remove('hidden');
-
-                    // Setup close button
-                    const closeBtn = document.getElementById('close-console-btn');
-                    if (closeBtn) {
-                        closeBtn.onclick = () => {
-                            consoleSection.classList.add('hidden');
-                            if (output) output.textContent = '';
-                            if (buildInfo) buildInfo.innerHTML = '';
-                            const analysisResults = document.getElementById('analysis-results');
-                            if (analysisResults) {
-                                analysisResults.innerHTML = '';
-                                analysisResults.classList.add('hidden');
-                            }
-                        };
-                    }
-
-                    // Setup analyze button
-                    const analyzeBtn = document.getElementById('analyze-console-btn');
-                    if (analyzeBtn) {
-                        const newAnalyzeBtn = analyzeBtn.cloneNode(true);
-                        analyzeBtn.parentNode.replaceChild(newAnalyzeBtn, analyzeBtn);
-                        
-                        newAnalyzeBtn.addEventListener('click', async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            try {
-                                await this.analyzeConsoleLog({
-                                    job_name: data.job_name,
-                                    build_number: data.build_number,
-                                    console_log: data.console_log,
-                                    original_url: consoleUrl
-                                }, newAnalyzeBtn);
-                            } catch (error) {
-                                console.error('[LogsMode] Error in analyze button:', error);
-                            }
-                        });
-                    }
-
-                    // Scroll the console section into view
-                    consoleSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                console.log('Console section element:', consoleSection); // Debug log
+                
+                if (!consoleSection) {
+                    console.error('Could not find embedded-console-section');
+                    return;
                 }
+
+                // Update title
+                const title = document.getElementById('console-title');
+                if (title) {
+                    title.textContent = `Console Log: ${data.job_name} #${data.build_number}`;
+                } else {
+                    console.error('Could not find console-title element');
+                }
+
+                // Update build info
+                const buildInfo = document.getElementById('console-build-info');
+                if (buildInfo) {
+                    buildInfo.innerHTML = `
+                        <div><strong>Job:</strong> ${data.job_name}</div>
+                        <div><strong>Build:</strong> #${data.build_number}</div>
+                        <div><strong>Source:</strong> <a href="${consoleUrl}" target="_blank">View in Jenkins</a></div>
+                    `;
+                } else {
+                    console.error('Could not find console-build-info element');
+                }
+
+                // Update console output
+                const output = document.getElementById('console-output');
+                if (output) {
+                    console.log('Setting console output, length:', data.console_log.length); // Debug log
+                    output.textContent = this.escapeHtml(data.console_log);
+                } else {
+                    console.error('Could not find console-output element');
+                }
+
+                // Store log data for analysis
+                consoleSection.dataset.logPayload = JSON.stringify({
+                    job_name: data.job_name,
+                    build_number: data.build_number,
+                    console_log: data.console_log
+                });
+
+                // Show the console section
+                consoleSection.classList.remove('hidden');
+                console.log('Removed hidden class from console section'); // Debug log
+
+                // Setup close button
+                const closeBtn = document.getElementById('close-console-btn');
+                if (closeBtn) {
+                    closeBtn.onclick = () => {
+                        consoleSection.classList.add('hidden');
+                        if (output) output.textContent = '';
+                        if (buildInfo) buildInfo.innerHTML = '';
+                        const analysisResults = document.getElementById('analysis-results');
+                        if (analysisResults) {
+                            analysisResults.innerHTML = '';
+                            analysisResults.classList.add('hidden');
+                        }
+                    };
+                } else {
+                    console.error('Could not find close-console-btn element');
+                }
+
+                // Setup analyze button
+                const analyzeBtn = document.getElementById('analyze-console-btn');
+                if (analyzeBtn) {
+                    // Remove any existing listeners
+                    const newAnalyzeBtn = analyzeBtn.cloneNode(true);
+                    analyzeBtn.parentNode.replaceChild(newAnalyzeBtn, analyzeBtn);
+                    
+                    newAnalyzeBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                            await this.analyzeConsoleLog({
+                                job_name: data.job_name,
+                                build_number: data.build_number,
+                                console_log: data.console_log,
+                                original_url: consoleUrl
+                            }, newAnalyzeBtn);
+                        } catch (error) {
+                            console.error('[LogsMode] Error in analyze button:', error);
+                        }
+                    });
+                } else {
+                    console.error('Could not find analyze-console-btn element');
+                }
+
+                // Make sure the console section is visible and scroll it into view
+                consoleSection.style.display = 'block';
+                consoleSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                console.log('Scrolled console section into view'); // Debug log
                 
                 showToast(`Fetched console for ${data.job_name} #${data.build_number}`, 'success');
             } else {
