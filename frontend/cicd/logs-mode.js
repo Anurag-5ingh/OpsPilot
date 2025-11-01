@@ -184,19 +184,44 @@ class LogsMode {
             console.warn('[LogsMode] No Jenkins configs found for dropdown');
         }
         
-        // Add delete button next to selector if not present
-        let delBtn = document.getElementById('delete-jenkins-config-btn');
-        if (!delBtn) {
-            delBtn = document.createElement('button');
-            delBtn.id = 'delete-jenkins-config-btn';
-            delBtn.className = 'config-btn danger';
-            delBtn.textContent = 'Delete';
-            const parent = select.parentElement;
-            parent && parent.appendChild(delBtn);
-            delBtn.addEventListener('click', async () => {
+        // Select first config if only one exists
+        if (configs.length === 1) {
+            select.value = configs[0].id;
+            this.currentJenkinsConfig = configs[0].id;
+        }
+        
+        // Update select style to accommodate the trash icon if config is selected
+        select.style.paddingRight = select.value ? '30px' : '12px';
+        
+        // Remove existing trash icon if any
+        const existingTrash = select.parentElement.querySelector('.trash-icon');
+        if (existingTrash) {
+            existingTrash.remove();
+        }
+        
+        // Add trash icon if a config is selected
+        if (select.value) {
+            const trashIcon = document.createElement('span');
+            trashIcon.className = 'trash-icon';
+            trashIcon.innerHTML = '🗑️';
+            trashIcon.style.position = 'absolute';
+            trashIcon.style.right = '5px';
+            trashIcon.style.top = '50%';
+            trashIcon.style.transform = 'translateY(-50%)';
+            trashIcon.style.cursor = 'pointer';
+            trashIcon.style.fontSize = '16px';
+            trashIcon.title = 'Delete configuration';
+            
+            // Ensure parent has position relative for absolute positioning
+            select.parentElement.style.position = 'relative';
+            
+            trashIcon.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 const id = select.value;
                 if (!id) return;
+                
                 if (!confirm('Delete selected Jenkins configuration?')) return;
+                
                 try {
                     const resp = await fetch(`/cicd/jenkins/configs/${id}`, { method: 'DELETE' });
                     const data = await resp.json();
@@ -210,24 +235,29 @@ class LogsMode {
                     window.appendMessage('Error deleting Jenkins configuration: ' + e.message, 'system');
                 }
             });
+            
+            select.parentElement.appendChild(trashIcon);
         }
-        delBtn.disabled = !select.value;
-        select.addEventListener('change', () => {
-            const btn = document.getElementById('delete-jenkins-config-btn');
-            if (btn) btn.disabled = !select.value;
-        });
         
-        if (configs.length === 1) {
-            select.value = configs[0].id;
-            this.currentJenkinsConfig = configs[0].id;
-        }
+        // Add change event listener to handle trash icon visibility
+        select.addEventListener('change', () => {
+            select.style.paddingRight = select.value ? '30px' : '12px';
+            const trashIcon = select.parentElement.querySelector('.trash-icon');
+            if (select.value) {
+                if (!trashIcon) {
+                    this.populateJenkinsConfigs(configs); // Refresh to add trash icon
+                }
+            } else if (trashIcon) {
+                trashIcon.remove();
+            }
+        });
     }
     
     populateAnsibleConfigs(configs) {
         const select = document.getElementById('ansible-config-select');
         if (!select) return;
         
-        // Clear existing options except first
+        // Clear existing options and set a helpful default
         select.innerHTML = '<option value="">Select Ansible...</option>';
         
         configs.forEach(config => {
@@ -237,19 +267,44 @@ class LogsMode {
             select.appendChild(option);
         });
         
-        // Add delete button next to selector if not present
-        let delBtn = document.getElementById('delete-ansible-config-btn');
-        if (!delBtn) {
-            delBtn = document.createElement('button');
-            delBtn.id = 'delete-ansible-config-btn';
-            delBtn.className = 'config-btn danger';
-            delBtn.textContent = 'Delete';
-            const parent = select.parentElement;
-            parent && parent.appendChild(delBtn);
-            delBtn.addEventListener('click', async () => {
+        // Select first config if only one exists
+        if (configs.length === 1) {
+            select.value = configs[0].id;
+            this.currentAnsibleConfig = configs[0].id;
+        }
+        
+        // Update select style to accommodate the trash icon if config is selected
+        select.style.paddingRight = select.value ? '30px' : '12px';
+        
+        // Remove existing trash icon if any
+        const existingTrash = select.parentElement.querySelector('.trash-icon');
+        if (existingTrash) {
+            existingTrash.remove();
+        }
+        
+        // Add trash icon if a config is selected
+        if (select.value) {
+            const trashIcon = document.createElement('span');
+            trashIcon.className = 'trash-icon';
+            trashIcon.innerHTML = '🗑️';
+            trashIcon.style.position = 'absolute';
+            trashIcon.style.right = '5px';
+            trashIcon.style.top = '50%';
+            trashIcon.style.transform = 'translateY(-50%)';
+            trashIcon.style.cursor = 'pointer';
+            trashIcon.style.fontSize = '16px';
+            trashIcon.title = 'Delete configuration';
+            
+            // Ensure parent has position relative for absolute positioning
+            select.parentElement.style.position = 'relative';
+            
+            trashIcon.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 const id = select.value;
                 if (!id) return;
+                
                 if (!confirm('Delete selected Ansible configuration?')) return;
+                
                 try {
                     const resp = await fetch(`/cicd/ansible/configs/${id}`, { method: 'DELETE' });
                     const data = await resp.json();
@@ -263,17 +318,22 @@ class LogsMode {
                     window.appendMessage('Error deleting Ansible configuration: ' + e.message, 'system');
                 }
             });
+            
+            select.parentElement.appendChild(trashIcon);
         }
-        delBtn.disabled = !select.value;
-        select.addEventListener('change', () => {
-            const btn = document.getElementById('delete-ansible-config-btn');
-            if (btn) btn.disabled = !select.value;
-        });
         
-        if (configs.length === 1) {
-            select.value = configs[0].id;
-            this.currentAnsibleConfig = configs[0].id;
-        }
+        // Add change event listener to handle trash icon visibility
+        select.addEventListener('change', () => {
+            select.style.paddingRight = select.value ? '30px' : '12px';
+            const trashIcon = select.parentElement.querySelector('.trash-icon');
+            if (select.value) {
+                if (!trashIcon) {
+                    this.populateAnsibleConfigs(configs); // Refresh to add trash icon
+                }
+            } else if (trashIcon) {
+                trashIcon.remove();
+            }
+        });
     }
 
     async fetchConsoleFromUrl() {
@@ -365,12 +425,18 @@ class LogsMode {
     }
 
     showConsoleLogModal(logData) {
+        // Remove any existing modal first
+        const existingModal = document.getElementById('console-log-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
         const modalHTML = `
             <div class="modal-overlay" id="console-log-modal">
                 <div class="modal-content large">
                     <div class="modal-header">
                         <h3>Console Log: ${logData.job_name} #${logData.build_number}</h3>
-                        <button class="modal-close" id="console-modal-close">&times;</button>
+                        <button class="modal-close" id="console-modal-close" aria-label="Close">&times;</button>
                     </div>
                     <div class="modal-body">
                         <div class="build-info">
@@ -400,54 +466,43 @@ class LogsMode {
         
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         
-        // Setup event listeners with proper error handling and logging
         const modal = document.getElementById('console-log-modal');
-        if (modal) {
-            // Attach minimal payload for delegated handlers
-            try {
-                modal.dataset.logPayload = JSON.stringify({
-                    job_name: logData.job_name,
-                    build_number: logData.build_number,
-                    console_log: logData.console_log
-                });
-            } catch (err) {
-                console.warn('[LogsMode] Failed to attach modal payload', err);
-            }
+        if (!modal) return;
+        
+        // Store log data for analysis
+        try {
+            modal.dataset.logPayload = JSON.stringify({
+                job_name: logData.job_name,
+                build_number: logData.build_number,
+                console_log: logData.console_log
+            });
+        } catch (err) {
+            console.warn('[LogsMode] Failed to attach modal payload', err);
         }
-        const closeBtn = document.getElementById('console-modal-close');
-        const closeFooterBtn = document.getElementById('console-close-btn');
-        const analyzeBtn = document.getElementById('analyze-console-btn');
-        const closeModal = () => {
-            if (modal && modal.parentNode) {
-                modal.remove();
+        
+        // Single close function for all close actions
+        const closeModal = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
+            modal.remove();
         };
         
-        // Add event listeners with proper error handling
-        if (closeBtn) {
-            closeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                closeModal();
-            });
-        }
+        // Single event handler for all close actions
+        modal.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target === modal || // Click on overlay
+                target.id === 'console-modal-close' || // Click on X button
+                target.id === 'console-close-btn' || // Click on Close button
+                target.closest('#console-modal-close') || // Click on X button content
+                target.closest('#console-close-btn')) { // Click on Close button content
+                closeModal(e);
+            }
+        });
         
-        if (closeFooterBtn) {
-            closeFooterBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                closeModal();
-            });
-        }
-        
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    closeModal();
-                }
-            });
-        }
-        
+        // Set up analyze button
+        const analyzeBtn = modal.querySelector('#analyze-console-btn');
         if (analyzeBtn) {
             analyzeBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -460,17 +515,18 @@ class LogsMode {
             });
         }
         
-        // Ensure modal is visible and clickable
-        if (modal) {
-            // Raise above any other overlays
-            modal.style.zIndex = '10050';
-            modal.style.pointerEvents = 'auto';
-        }
+        // Set modal styles
+        modal.style.zIndex = '10050';
+        modal.style.display = 'block';
         
     }
     
     async analyzeConsoleLog(logData, analyzeBtn) {
+        // Prevent multiple analyze calls
+        if (analyzeBtn.disabled) return;
+        
         window.setButtonLoading(analyzeBtn, true);
+        analyzeBtn.disabled = true; // Prevent multiple clicks
         
         const resultsDiv = document.getElementById('analysis-results');
         resultsDiv.innerHTML = '<div class="loading">Analyzing console log for errors and solutions...</div>';
