@@ -1,8 +1,14 @@
 /**
  * Logs Mode - CI/CD Build Logs and Fix Suggestions
  * 
- * This module handles displaying Jenkins build logs, analyzing failures,
- * and executing AI-suggested fix commands with user confirmation.
+ * This module handles:
+ * 1. Loading and displaying Jenkins build logs from console URLs
+ * 2. Analyzing failures using AI to identify root causes
+ * 3. Displaying suggested fixes for reference (no automatic execution)
+ * 
+ * NOTE: This module operates independently within the Logs tab.
+ * It does NOT interact with the Chat tab or execute terminal commands automatically.
+ * All analysis results and suggested fixes are displayed inline for manual review.
  */
 
 class LogsMode {
@@ -75,7 +81,7 @@ class LogsMode {
                             <small class="form-help">Direct link to specific Jenkins job console</small>
                         </div>
                         <button id="fetch-console-btn" class="primary-btn">
-                            <span class="btn-text">Analyze Console</span>
+                            <span class="btn-text">Load Logs</span>
                             <span class="spinner hidden"></span>
                         </button>
                     </div>
@@ -95,7 +101,7 @@ class LogsMode {
                             </div>
                             <div class="console-actions">
                                 <button id="analyze-console-btn" class="primary-btn">
-                                    <span class="btn-text">🔍 Analyze & Suggest Fix</span>
+                                    <span class="btn-text">🔍 Analyze Logs</span>
                                     <span class="spinner hidden"></span>
                                 </button>
                             </div>
@@ -233,13 +239,13 @@ class LogsMode {
                         const resp = await fetch(`/cicd/jenkins/configs/${id}`, { method: 'DELETE' });
                         const data = await resp.json();
                         if (resp.ok) {
-                            window.appendMessage('Jenkins configuration deleted', 'system');
+                            showToast('Jenkins configuration deleted', 'success');
                             this.loadConfigurations();
                         } else {
-                            window.appendMessage(data.error || 'Failed to delete Jenkins configuration', 'system');
+                            showToast(data.error || 'Failed to delete Jenkins configuration', 'error');
                         }
                     } catch (e) {
-                        window.appendMessage('Error deleting Jenkins configuration: ' + e.message, 'system');
+                        showToast('Error deleting Jenkins configuration: ' + e.message, 'error');
                     }
                 });
                 
@@ -311,13 +317,13 @@ class LogsMode {
                         const resp = await fetch(`/cicd/ansible/configs/${id}`, { method: 'DELETE' });
                         const data = await resp.json();
                         if (resp.ok) {
-                            window.appendMessage('Ansible configuration deleted', 'system');
+                            showToast('Ansible configuration deleted', 'success');
                             this.loadConfigurations();
                         } else {
-                            window.appendMessage(data.error || 'Failed to delete Ansible configuration', 'system');
+                            showToast(data.error || 'Failed to delete Ansible configuration', 'error');
                         }
                     } catch (e) {
-                        window.appendMessage('Error deleting Ansible configuration: ' + e.message, 'system');
+                        showToast('Error deleting Ansible configuration: ' + e.message, 'error');
                     }
                 });
                 
@@ -653,37 +659,31 @@ class LogsMode {
             <div class="analysis-summary">
                 <h4>🔍 Error Analysis</h4>
                 <div class="error-summary">
-                    <strong>Root Cause:</strong> ${analysis.root_cause || 'Could not determine'}<br>
-                    <strong>Error Summary:</strong> ${analysis.error_summary || 'No specific error identified'}<br>
-                    <strong>Confidence:</strong> ${Math.round((analysis.confidence || 0) * 100)}%
+                    <p><strong>Root Cause:</strong> ${analysis.root_cause || 'Could not determine'}</p>
+                    <p><strong>Error Summary:</strong> ${analysis.error_summary || 'No specific error identified'}</p>
+                    <p><strong>Confidence:</strong> ${Math.round((analysis.confidence || 0) * 100)}%</p>
                 </div>
             </div>
             
             ${analysis.suggested_commands && analysis.suggested_commands.length > 0 ? `
-                <div class="suggested-commands">
-                    <h4>💡 Suggested Fix Commands</h4>
-                    <div class="commands-list">
+                <div class="suggested-fixes">
+                    <h4>💡 Suggested Fixes</h4>
+                    <div class="fixes-list">
                         ${analysis.suggested_commands.map((cmd, i) => `
-                            <div class="command-item">
-                                <code>${cmd}</code>
+                            <div class="fix-item">
+                                <span class="fix-number">${i + 1}.</span>
+                                <code>${this.escapeHtml(cmd)}</code>
                             </div>
                         `).join('')}
                     </div>
-                    <div class="fix-actions">
-                        <button class="fix-execute-btn" onclick="logsMode.executeSuggestedFix(${JSON.stringify(analysis).replace(/"/g, '&quot;')})">
-                            ✅ Execute Fix Commands
-                        </button>
-                        <button class="fix-cancel-btn" onclick="this.style.display='none'">
-                            ❌ Cancel
-                        </button>
-                    </div>
+                    <p class="note"><em>Note: These are suggested commands for reference. Please review before executing manually.</em></p>
                 </div>
             ` : ''}
             
             ${analysis.suggested_playbook ? `
                 <div class="suggested-playbook">
                     <h4>🔧 Suggested Ansible Playbook</h4>
-                    <pre><code>${analysis.suggested_playbook}</code></pre>
+                    <pre><code>${this.escapeHtml(analysis.suggested_playbook)}</code></pre>
                 </div>
             ` : ''}
         `;
@@ -850,7 +850,7 @@ class LogsMode {
     
     async viewBuildLogs(buildId, offset = 0) {
         if (!this.currentJenkinsConfig) {
-            window.appendMessage('Please configure Jenkins connection first', 'system');
+            showToast('Please configure Jenkins connection first', 'error');
             return;
         }
         
@@ -889,12 +889,12 @@ class LogsMode {
                 }
             } else {
                 const error = data.error || 'Unknown error occurred';
-                window.appendMessage(`Failed to load logs: ${error}`, 'system');
+                showToast(`Failed to load logs: ${error}`, 'error');
             }
             
         } catch (error) {
-            window.appendMessage(`Error loading logs: ${error.message}`, 'system');
-        } finally {
+            showToast(`Error loading logs: ${error.message}`, 'error');
+        }
             // Remove loading indicator
             loadingEl.remove();
         }
@@ -993,7 +993,8 @@ class LogsMode {
             
             if (analysis.success) {
                 this.currentAnalysis = analysis;
-                this.displayAnalysisResults(analysis);
+                // Note: This method is kept for backward compatibility but analysis should be done via Analyze Logs button
+                showToast('Analysis complete', 'success');
             } else {
                 showToast(`Analysis failed: ${analysis.error}`, 'error');
             }
@@ -1003,119 +1004,12 @@ class LogsMode {
         }
     }
     
-    displayAnalysisResults(analysis) {
-        // Display error summary
-        window.appendMessage(`Analysis complete for ${analysis.job_name} #${analysis.build_number}`, 'system');
-        window.appendMessage(`Error Summary: ${analysis.error_summary}`, 'ai');
-        window.appendMessage(`Root Cause: ${analysis.root_cause}`, 'ai');
-        
-        if (analysis.error_categories && analysis.error_categories.length > 0) {
-            window.appendMessage(`Categories: ${analysis.error_categories.join(', ')}`, 'ai');
-        }
-        
-        // Display suggested commands
-        if (analysis.suggested_commands && analysis.suggested_commands.length > 0) {
-            const commandsDiv = document.createElement('div');
-            commandsDiv.className = 'message ai suggested-commands';
-            commandsDiv.innerHTML = `
-                <strong>Suggested Fix Commands:</strong><br>
-                ${analysis.suggested_commands.map(cmd => `• ${cmd}`).join('<br>')}
-            `;
-            document.getElementById('chat-container').appendChild(commandsDiv);
-            
-            // Show fix execution buttons
-            this.showFixButtons(analysis);
-        }
-        
-        // Display suggested playbook if available
-        if (analysis.suggested_playbook) {
-            const playbookDiv = document.createElement('div');
-            playbookDiv.className = 'message ai suggested-playbook';
-            playbookDiv.innerHTML = `
-                <strong>Suggested Ansible Playbook:</strong> ${analysis.suggested_playbook.name}<br>
-                <em>Path:</em> ${analysis.suggested_playbook.path}
-            `;
-            document.getElementById('chat-container').appendChild(playbookDiv);
-        }
-        
-        document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
-    }
+    // Removed: displayAnalysisResults method that integrated with Chat tab
+    // Analysis results are now displayed within the Logs tab using displayAnalysisResults(analysis, container) method
     
-    showFixButtons(analysis) {
-        const container = document.getElementById('chat-container');
-        const btnGroup = document.createElement('div');
-        btnGroup.className = 'confirm-buttons fix-buttons';
-        
-        const executeBtn = document.createElement('button');
-        executeBtn.textContent = 'Execute Fix Commands';
-        executeBtn.className = 'fix-action-btn';
-        executeBtn.onclick = () => this.executeFix(analysis, btnGroup);
-        btnGroup.appendChild(executeBtn);
-        
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.className = 'fix-cancel-btn';
-        cancelBtn.onclick = () => {
-            window.appendMessage('Fix cancelled by user', 'system');
-            btnGroup.remove();
-        };
-        btnGroup.appendChild(cancelBtn);
-        
-        container.appendChild(btnGroup);
-        container.scrollTop = container.scrollHeight;
-    }
-    
-    async executeFix(analysis, buttonContainer) {
-        if (!analysis.suggested_commands || analysis.suggested_commands.length === 0) {
-            showToast('No fix commands to execute', 'error');
-            return;
-        }
-        
-        showToast('Executing fix commands...', 'info');
-        buttonContainer.remove();
-        
-        try {
-            const response = await fetch('/cicd/fix/execute', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fix_history_id: analysis.fix_history_id,
-                    commands: analysis.suggested_commands,
-                    host: currentHost,
-                    username: currentUser
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                // Display results
-                data.results.forEach(result => {
-                    const resultDiv = document.createElement('div');
-                    resultDiv.className = `message system fix-result ${result.success ? 'success' : 'error'}`;
-                    resultDiv.innerHTML = `
-                        <strong>Command:</strong> ${result.command}<br>
-                        <strong>Output:</strong> <pre>${result.output || '(no output)'}</pre>
-                        ${result.error ? `<strong>Error:</strong> <pre>${result.error}</pre>` : ''}
-                        <strong>Status:</strong> ${result.success ? '✅ Success' : '❌ Failed'}
-                    `;
-                    document.getElementById('chat-container').appendChild(resultDiv);
-                });
-                
-                const summaryMsg = data.all_success 
-                    ? 'All fix commands executed successfully' 
-                    : 'Some commands failed. Check results.';
-                showToast(summaryMsg, data.all_success ? 'success' : 'error');
-            } else {
-                showToast(`Fix execution failed: ${data.error}`, 'error');
-            }
-            
-        } catch (error) {
-            showToast(`Error executing fix: ${error.message}`, 'error');
-        }
-        
-        document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
-    }
+    // Removed: showFixButtons and executeFix methods
+    // These methods were responsible for executing commands in terminal/chat
+    // Per requirements: no terminal execution, only display analysis and suggested fixes
     
     // Small helpers to keep modal handlers DRY
     _withButtonLoading(btn, fn) {
