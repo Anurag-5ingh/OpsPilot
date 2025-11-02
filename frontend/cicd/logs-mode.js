@@ -724,8 +724,8 @@ class LogsMode {
                 if (/^\[$/.test(s)) return '';
                 if (/^\]\s*,?$/.test(s)) return '';
                 if (/^"?steps"?\s*:\s*\[\s*$/.test(s)) return '';
-                // Strip leading numbering like 1., 1), 1:, 1; and bullet marks
-                s = s.replace(/^\d+[\.\):;]\s*/, '').replace(/^[-\*]\s*/, '');
+                // Strip ANY repeated leading numeric markers (e.g., '1.', '1)', '1:', '1;', including '1.1.') and bullets
+                s = s.replace(/^(?:\d+[\.\):;]\s*)+/, '').replace(/^[\-\*]\s*/, '');
                 // Remove surrounding single/double quotes
                 s = s.replace(/^['"]/, '').replace(/['"]\s*$/, '');
                 // Remove a dangling trailing comma
