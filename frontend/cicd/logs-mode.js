@@ -724,10 +724,12 @@ class LogsMode {
                 if (/^\[$/.test(s)) return '';
                 if (/^\]\s*,?$/.test(s)) return '';
                 if (/^"?steps"?\s*:\s*\[\s*$/.test(s)) return '';
+                // Remove surrounding single/double quotes first so numbering at start is detectable
+                s = s.replace(/^['"]/, '').replace(/['"]\s*$/, '');
                 // Strip ANY repeated leading numeric markers (e.g., '1.', '1)', '1:', '1;', including '1.1.') and bullets
                 s = s.replace(/^(?:\d+[\.\):;]\s*)+/, '').replace(/^[\-\*]\s*/, '');
-                // Remove surrounding single/double quotes
-                s = s.replace(/^['"]/, '').replace(/['"]\s*$/, '');
+                // Clean any leftover leading punctuation
+                s = s.replace(/^[\.:;,-]+\s*/, '');
                 // Remove a dangling trailing comma
                 s = s.replace(/,\s*$/, '');
                 return s.trim();
