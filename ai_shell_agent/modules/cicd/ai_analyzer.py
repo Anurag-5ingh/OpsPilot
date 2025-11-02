@@ -618,7 +618,40 @@ Requirements:
                 except Exception as _e:
                     logger.debug(f"Failed to get suggested steps: {_e}")
             else:
-                suggested_steps = []
+                # Commands exist; still generate concise human-readable steps for UI
+                suggested_steps: List[str] = []
+                try:
+                    steps_prompt = f"""
+Given this Jenkins failure analysis, provide a concise, actionable sequence of steps to resolve the issue.
+
+Job: {build_log.job_name}#{build_log.build_number}
+Target Server: {build_log.target_server or 'Unknown'}
+Error Summary: {error_summary}
+Root Cause: {root_cause}
+
+Requirements:
+1) Prefer precise commands when safe and known; otherwise write human-readable steps.
+2) Keep each step on a single line.
+3) Number the steps 1., 2., 3. etc.
+4) Do not include prose outside the steps list.
+"""
+                    steps_result = ask_ai_for_command(
+                        steps_prompt,
+                        memory=self.memory.get(),
+                        system_context=self.system_context,
+                    )
+                    if steps_result:
+                        ai_resp = steps_result.get('ai_response', {})
+                        steps_text = ai_resp.get('final_command') or ai_resp.get('response') or ''
+                        for line in (steps_text or '').split('\n'):
+                            ln = line.strip()
+                            if not ln:
+                                continue
+                            ln = re.sub(r'^\d+[\.\)]\s*', '', ln)
+                            ln = re.sub(r'^[-\*]\s*', '', ln)
+                            suggested_steps.append(ln)
+                except Exception as _e:
+                    logger.debug(f"Failed to get suggested steps (commands exist): {_e}")
             
             # Look for relevant Ansible playbook
             suggested_playbook = None

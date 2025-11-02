@@ -1,0 +1,25 @@
+# Enforce LF line endings for text files
+* text=auto eol=lf
+
+# Treat common binaries as binary (no EOL changes)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# Shell/scripts explicitly LF
+*.sh text eol=lf
+*.ps1 text eol=lf
+
+# Optionally allow Windows batch to keep CRLF (uncomment if needed)
+# *.bat text eol=crlf
+# *.cmd text eol=crlf

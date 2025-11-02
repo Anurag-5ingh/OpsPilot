@@ -708,6 +708,11 @@ class LogsMode {
     }
     
     displayAnalysisResults(analysis, container) {
+        // Prefer suggested_steps; if absent, derive simple steps from commands for UI
+        const stepsToShow = (analysis.suggested_steps && analysis.suggested_steps.length > 0)
+            ? analysis.suggested_steps
+            : (analysis.suggested_commands || []).map(cmd => `Run: ${cmd}`);
+
         const resultsHTML = `
             <div class="analysis-summary">
                 <h4>🔍 Error Analysis</h4>
@@ -718,11 +723,11 @@ class LogsMode {
                 </div>
             </div>
             
-            ${analysis.suggested_steps && analysis.suggested_steps.length > 0 ? `
+            ${stepsToShow && stepsToShow.length > 0 ? `
                 <div class="suggested-steps">
                     <h4>📝 Suggested Steps</h4>
                     <ol class="steps-list">
-                        ${analysis.suggested_steps.map(step => `
+                        ${stepsToShow.map(step => `
                             <li class="step-item">${this.escapeHtml(step)}</li>
                         `).join('')}
                     </ol>
