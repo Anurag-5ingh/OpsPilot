@@ -713,6 +713,27 @@ class LogsMode {
             ? analysis.suggested_steps
             : (analysis.suggested_commands || []).map(cmd => `Run: ${cmd}`);
 
+        // Sanitize steps: remove JSON artifacts, surrounding quotes, and trailing commas
+        const cleanedSteps = (stepsToShow || [])
+            .map((raw) => {
+                if (raw == null) return '';
+                let s = String(raw).trim();
+                // Drop obvious JSON wrapper lines
+                if (/^\{\s*$/.test(s)) return '';
+                if (/^\}\s*,?$/.test(s)) return '';
+                if (/^\[$/.test(s)) return '';
+                if (/^\]\s*,?$/.test(s)) return '';
+                if (/^"?steps"?\s*:\s*\[\s*$/.test(s)) return '';
+                // Strip leading numbering like 1., 1), 1:, 1; and bullet marks
+                s = s.replace(/^\d+[\.\):;]\s*/, '').replace(/^[-\*]\s*/, '');
+                // Remove surrounding single/double quotes
+                s = s.replace(/^['"]/, '').replace(/['"]\s*$/, '');
+                // Remove a dangling trailing comma
+                s = s.replace(/,\s*$/, '');
+                return s.trim();
+            })
+            .filter(s => s && s !== '{' && s !== '}' && s !== '[' && s !== ']');
+
         const resultsHTML = `
             <div class="analysis-summary">
                 <h4>🔍 Error Analysis</h4>
@@ -723,11 +744,11 @@ class LogsMode {
                 </div>
             </div>
             
-            ${stepsToShow && stepsToShow.length > 0 ? `
+            ${cleanedSteps && cleanedSteps.length > 0 ? `
                 <div class="suggested-steps">
                     <h4>📝 Suggested Steps</h4>
                     <ol class="steps-list">
-                        ${stepsToShow.map(step => `
+                        ${cleanedSteps.map(step => `
                             <li class="step-item">${this.escapeHtml(step)}</li>
                         `).join('')}
                     </ol>
