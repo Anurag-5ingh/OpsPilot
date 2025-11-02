@@ -432,9 +432,9 @@
   background: #1e1e1e !important;
   color: #fff !important;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  max-height: 800px;
+  /* Allow section to grow with content; let page handle scroll */
   min-height: 400px !important;
-  overflow: hidden;
+  overflow: visible;
   transition: all 0.3s ease;
   display: block;
   width: 100% !important;
@@ -489,10 +489,9 @@
 
 .console-content {
   padding: 16px;
-  /* Restore container scrolling for long content */
-  overflow-y: auto;
-  /* Fill remaining height under header to enable internal scrolling */
-  flex: 1 1 auto;
+  /* Let page scroll; avoid nested scrollbars */
+  overflow: visible;
+  flex: initial;
 }
 
 #console-build-info {
