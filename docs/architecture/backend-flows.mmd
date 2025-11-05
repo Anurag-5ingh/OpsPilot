@@ -1,0 +1,86 @@
+```mermaid
+flowchart TB
+  subgraph RESTLayer["REST Layer (app.py)"]
+    ask[/POST /ask/]
+    troubleshoot_analyze[/POST /troubleshoot/analyze/]
+    cicd_analyze_console[/POST /cicd/analyze/console/]
+    cicd_configs[/GET /cicd/(jenkins|ansible)/configs]
+    static_route[/GET /opspilot + static/]
+    orchestration_plans[/POST /api/v1/orchestration/plans]
+  end
+
+  subgraph WSLayer["WebSocket (Socket.IO)"]
+    start_ssh[on 'start_ssh']
+    terminal_input[on 'terminal_input']
+    resize[on 'resize']
+    disconnect[on 'disconnect']
+    reader_thread[Reader thread -> emit terminal_output]
+  end
+
+  subgraph Services["Domain Services"]
+    CG[CommandGeneration: ask_ai_for_command, analyze_command_failure]
+    TR[Troubleshooting Engine + ask_ai_for_troubleshoot]
+    CICD_AI[AI Log Analyzer (AILogAnalyzer)]
+    JenkinsSvc[JenkinsService]
+    AnsibleSvc[AnsibleService]
+    Orchestrator[MultiServerCoordinator]
+  end
+
+  subgraph Infra["Infra & Shared"]
+    ConvMemory[ConversationMemory]
+    SysContext[SystemContextManager]
+    MLRisk[MLRiskScorer]
+    Compliance[SecurityComplianceChecker]
+    Docs[SmartDocumentationGenerator]
+  end
+
+  subgraph SSH["SSH Subsystem"]
+    Paramiko[Paramiko SSHClient + invoke_shell]
+    SessionMgr[session_manager: profiles CRUD + tests]
+    HostKeys[host_key_manager policies]
+    Secrets[get/set/delete_secret]
+  end
+
+  subgraph Data["Persistence"]
+    SQLite[(SQLite models: BuildLog, JenkinsConfig, AnsibleConfig, FixHistory, ML DB)]
+    Profiles[ai_shell_agent/data/ssh_profiles.json]
+    Keyring[(Keyring/secure secrets)]
+  end
+
+  subgraph Ext["External Integrations"]
+    OpenAI
+    Jenkins
+    SSHHosts
+  end
+
+  ask --> CG
+  CG --> MLRisk
+  CG --> Compliance
+  CG --> ConvMemory
+  CG --> SysContext
+  CG --> OpenAI
+
+  troubleshoot_analyze --> TR
+  TR --> OpenAI
+  TR --> SysContext
+  TR --> Compliance
+
+  cicd_analyze_console --> CICD_AI
+  CICD_AI --> JenkinsSvc
+  CICD_AI --> SQLite
+  CICD_AI --> Compliance
+
+  orchestration_plans --> Orchestrator
+  Orchestrator --> MLRisk
+  Orchestrator --> Compliance
+
+  start_ssh --> SessionMgr
+  SessionMgr --> Secrets
+  start_ssh --> Paramiko
+  Paramiko --> SSHHosts
+  reader_thread --> WSLayer
+
+  cicd_configs --> SQLite
+  SessionMgr --> Profiles
+  Compliance --> SQLite
+```

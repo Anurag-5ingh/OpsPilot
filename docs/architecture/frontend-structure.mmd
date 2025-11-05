@@ -1,0 +1,26 @@
+```mermaid
+flowchart TB
+  subgraph Frontend["frontend/"]
+    index[index.html]
+    js[js/]
+    styles[css/]
+  end
+
+  subgraph JS["JS modules (indicative)"]
+    main[shared/js/main.js]
+    terminal[shared/js/terminal.js]
+    cmdMode[shared/js/commandMode.js]
+    troubleshoot[shared/js/troubleshootMode.js]
+    profiles[shared/js/profiles.js]
+    logsMode[shared/js/logsMode.js]
+    utils[shared/js/utils.js]
+  end
+
+  index --> main
+  main --> terminal
+  main --> cmdMode
+  main --> troubleshoot
+  main --> profiles
+  main --> logsMode
+  main --> utils
+```

@@ -1,0 +1,79 @@
+```mermaid
+flowchart LR
+  subgraph Browser["Frontend (Static Web UI)"]
+    UI[Index.html + JS (frontend/)]
+    SocketIOClient[Socket.IO Client]
+    FetchAPI[Fetch API / REST]
+  end
+
+  subgraph FlaskApp["Backend (Flask + Flask-SocketIO) - app.py"]
+    Blueprints[Blueprints: ssh_bp, troubleshooting_bp, orchestration_bp]
+    REST[REST Endpoints]
+    WS[Socket.IO WebSocket Handlers]
+    Memory[ConversationMemory (shared)]
+    SysCtx[SystemContextManager]
+    ML[MLRiskScorer]
+    Compliance[SecurityComplianceChecker]
+    DocsGen[SmartDocumentationGenerator]
+    CICDAI[AI Log Analyzer (CI/CD)]
+    BGWorker[CI/CD Background Worker]
+  end
+
+  subgraph Modules["Core Modules (ai_shell_agent/modules)"]
+    SSHMod[SSH: client, session_manager, hostkeys, secrets]
+    CmdGen[Command Generation (AI + ML risk)]
+    Troubleshoot[Troubleshooting Engine + AI handler]
+    CICD[JenkinsService / AnsibleService + models]
+    Shared[Shared utils]
+    SystemAwareness[System Awareness]
+    Documentation[Smart Documentation]
+    Security[Security & Compliance]
+  end
+
+  subgraph Data["Data & Storage"]
+    SQLite[(SQLite DBs for CI/CD & ML)]
+    Profiles[ssh_profiles.json]
+    Secrets[Keyring / Secrets store]
+    Models[Joblib/ML artifacts]
+  end
+
+  subgraph External["External Systems"]
+    SSHHosts[Remote Servers (SSH)]
+    Jenkins[Jenkins]
+    Ansible[Ansible (local/remote)]
+    OpenAI[OpenAI API]
+  end
+
+  UI -->|HTTP GET| FlaskApp
+  FetchAPI -->|REST calls| REST
+  SocketIOClient -->|WS| WS
+
+  REST --> CmdGen
+  REST --> Troubleshoot
+  REST --> CICDAI
+  WS --> SSHMod
+
+  CmdGen --> ML
+  CmdGen --> Compliance
+  CmdGen --> Memory
+  CmdGen --> SysCtx
+  CmdGen --> OpenAI
+
+  Troubleshoot --> OpenAI
+  Troubleshoot --> SysCtx
+  Troubleshoot --> Compliance
+
+  CICDAI --> CICD
+  CICDAI --> SQLite
+  CICDAI --> Compliance
+  CICD --> Jenkins
+  CICD --> Ansible
+
+  SSHMod --> SSHHosts
+  SSHMod --> Profiles
+  SSHMod --> Secrets
+
+  ML --> Models
+  Compliance --> SQLite
+  BGWorker --> CICD
+```
