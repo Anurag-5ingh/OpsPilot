@@ -21,6 +21,7 @@ from ai_shell_agent.modules.security.compliance_checker import SecurityComplianc
 from ai_shell_agent.modules.documentation.smart_doc_generator import SmartDocumentationGenerator, DocumentationType, DocumentationFormat
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.api.endpoints.troubleshooting import troubleshooting_bp
+from ai_shell_agent.api.endpoints.orchestration import orchestration_bp, init_orchestration_api
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
 from ai_shell_agent.modules.cicd import JenkinsService, AnsibleService, AILogAnalyzer, BuildLog, AnsibleConfig, FixHistory, JenkinsConfig, start_background_worker, stop_background_worker
@@ -65,6 +66,14 @@ print("Initializing CI/CD AI Analyzer...")
 cicd_analyzer = AILogAnalyzer(memory=memory, system_context=system_context)
 print("CI/CD AI Analyzer initialized successfully")
 
+# Initialize Orchestration API
+print("Initializing orchestration API...")
+try:
+    init_orchestration_api(app)
+    print("Orchestration API initialized successfully")
+except Exception as e:
+    print(f"Warning: Failed to initialize orchestration API: {e}")
+
 # Start CI/CD background worker
 print("Starting CI/CD background worker...")
 try:
@@ -77,6 +86,7 @@ except Exception as e:
 print("Registering blueprints...")
 app.register_blueprint(ssh_bp)
 app.register_blueprint(troubleshooting_bp, url_prefix='/troubleshoot')
+app.register_blueprint(orchestration_bp)
 print("Blueprints registered successfully")
 
 

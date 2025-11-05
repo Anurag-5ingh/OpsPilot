@@ -1,0 +1,12 @@
+```mermaid
+flowchart LR
+  UI[UI: Logs Mode] --> POST[/POST /cicd/analyze/console/]
+  POST --> Analyzer[AILogAnalyzer]
+  Analyzer --> Quick[Quick error summary]
+  Analyzer --> AIProc[AI analysis (root cause, confidence)]
+  Analyzer --> Suggs[Generate fix steps & commands]
+  Suggs --> JSON[{Normalized JSON}]
+  JSON --> UI
+  Analyzer --> |optional| JenkinsSvc[JenkinsService]
+  JenkinsSvc --> Jenkins[Jenkins API]
+```

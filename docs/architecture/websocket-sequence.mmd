@@ -1,0 +1,26 @@
+```mermaid
+sequenceDiagram
+  participant UI as Browser (Socket.IO)
+  participant WS as Flask Socket.IO (app.py)
+  participant SSH as Paramiko SSHClient
+  participant Host as Remote Server
+
+  UI->>WS: emit("start_ssh", {ip,user,password? | profileId?})
+  alt profile-based connect
+    WS->>SessionMgr: load profile + callbacks
+    SessionMgr-->>WS: profile data
+  end
+  WS->>SSH: SSHClient.connect(...)
+  SSH->>Host: SSH handshake + auth
+  WS->>UI: emit("terminal_output", "Connected to ...")
+  par reader thread
+    WS->>SSH: read stdout/stderr loop
+    SSH-->>WS: data
+    WS->>UI: emit("terminal_output", data)
+  and input
+    UI->>WS: emit("terminal_input", {input})
+    WS->>SSH: chan.send(input)
+  end
+  UI->>WS: emit("disconnect")
+  WS->>WS: cleanup session
+```
