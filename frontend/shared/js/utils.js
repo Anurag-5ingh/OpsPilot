@@ -10,6 +10,7 @@ const state = {
   currentUser: "amren",     // Your current Windows username
   currentPassword: "",      // No password - using Windows auth
   currentPort: 22,         // Windows OpenSSH default port
+  localMode: false,         // Guest mode: local terminal instead of SSH
   socket: null,
   terminal: null,
   terminalConnected: false,

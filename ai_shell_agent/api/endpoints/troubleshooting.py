@@ -3,7 +3,6 @@ Troubleshooting endpoints for analyzing and fixing server issues.
 """
 
 from flask import Blueprint, request, jsonify
-from flask_cors import cross_origin
 import logging
 from ai_shell_agent.modules.troubleshooting.engine import TroubleshootingEngine
 try:
@@ -22,7 +21,6 @@ troubleshooting_bp = Blueprint('troubleshooting', __name__)
 engine = TroubleshootingEngine()
 
 @troubleshooting_bp.route("/analyze", methods=["POST"])
-@cross_origin()
 def analyze_error():
     """Analyze error text and suggest diagnostic commands"""
     try:
@@ -82,7 +80,6 @@ def analyze_error():
         }), 500
 
 @troubleshooting_bp.route("/suggest-fix", methods=["POST"])
-@cross_origin() 
 def suggest_fix():
     """Analyze diagnostic results and suggest fixes"""
     data = request.get_json()
@@ -125,7 +122,6 @@ def suggest_fix():
         return jsonify({"error": str(e)}), 500
 
 @troubleshooting_bp.route("/verify", methods=["POST"])
-@cross_origin()
 def verify_fix():
     """Get verification commands"""
     data = request.get_json()

@@ -199,7 +199,7 @@ class CICDBackgroundWorker:
                             time_diff = datetime.now(timezone.utc) - executed_time
                             if time_diff < timedelta(hours=24):
                                 return False  # Recently analyzed
-                        except:
+                        except (ValueError, AttributeError):
                             pass
             
             return True  # No recent analysis found

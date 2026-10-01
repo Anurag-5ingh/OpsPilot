@@ -333,7 +333,7 @@ def test_ssh_connection():
             if ssh_client:
                 try:
                     ssh_client.close()
-                except:
+                except Exception:
                     pass
             
             logger.error(f"SSH test connection failed: {e}")

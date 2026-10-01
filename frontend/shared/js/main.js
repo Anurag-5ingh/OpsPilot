@@ -93,6 +93,21 @@ function setupLoginListeners() {
       : (typeof connectSSH === 'function' ? connectSSH : null);
     if (connectHandler) connectBtn.addEventListener("click", connectHandler);
   }
+
+  // Guest mode (local terminal): only shown when the server says it is available
+  const guestBtn = document.getElementById("guest-button");
+  const guestOption = document.getElementById("guest-option");
+  if (guestBtn && guestOption) {
+    fetch("/guest/status")
+      .then(res => res.json())
+      .then(status => { if (status.available) guestOption.classList.remove("hidden"); })
+      .catch(() => {});
+    guestBtn.addEventListener("click", () => {
+      const connectLocalHandler = (window.Modules && window.Modules.Terminal && window.Modules.Terminal.connectLocal)
+        || (typeof connectLocal === 'function' ? connectLocal : null);
+      if (connectLocalHandler) connectLocalHandler();
+    });
+  }
 }
 
 /**

@@ -342,6 +342,7 @@ function connectWithProfile() {
   if (!profileId) { showError('Please select a profile'); return; }
   const profile = profiles.find(p => p.id === profileId);
   if (!profile) { showError('Profile not found'); return; }
+  state.localMode = false;
   state.currentHost = profile.host; state.currentUser = profile.username; state.selectedProfileId = profileId;
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('main-screen').classList.remove('hidden');

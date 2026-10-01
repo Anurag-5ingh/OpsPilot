@@ -9,7 +9,8 @@ import os
 import json
 import time
 import logging
-from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for
+from datetime import datetime, timezone
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
 from flask_socketio import SocketIO, emit
 import paramiko
 import threading
@@ -18,13 +19,15 @@ import threading
 from ai_shell_agent.modules.command_generation import ask_ai_for_command, analyze_command_failure
 from ai_shell_agent.modules.command_generation.ml_risk_scorer import MLRiskScorer
 from ai_shell_agent.modules.security.compliance_checker import SecurityComplianceChecker, ComplianceFramework
-from ai_shell_agent.modules.documentation.smart_doc_generator import SmartDocumentationGenerator, DocumentationType, DocumentationFormat
+from ai_shell_agent.modules.documentation.smart_doc_generator import SmartDocumentationGenerator, DocumentationFormat
 from ai_shell_agent.modules.ssh import create_ssh_client, run_shell, ssh_bp
 from ai_shell_agent.api.endpoints.troubleshooting import troubleshooting_bp
+from ai_shell_agent.modules.troubleshooting import ask_ai_for_troubleshoot, TroubleshootWorkflow
 from ai_shell_agent.modules.shared import ConversationMemory
 from ai_shell_agent.modules.system_awareness import SystemContextManager
-from ai_shell_agent.modules.cicd import JenkinsService, AnsibleService, AILogAnalyzer, BuildLog, AnsibleConfig, FixHistory, JenkinsConfig, start_background_worker, stop_background_worker
-from ai_shell_agent.modules.ssh.secrets import set_secret, get_secret
+from ai_shell_agent.modules.cicd import JenkinsService, AnsibleService, AILogAnalyzer, BuildLog, AnsibleConfig, JenkinsConfig, start_background_worker
+from ai_shell_agent.modules.ssh.secrets import set_secret
+from ai_shell_agent.modules.ssh import local_terminal
 
 # ===========================
 # Application Configuration
@@ -97,6 +100,8 @@ def serve_index():
 @app.route("/<path:path>")
 def serve_static(path):
     """Serve static frontend files (CSS, JS, images)"""
+    if not os.path.isfile(os.path.join(app.root_path, "frontend", path)):
+        return jsonify({"error": "Not found"}), 404
     return send_from_directory("frontend", path)
 
 # ===========================
@@ -119,7 +124,7 @@ def ask():
         "original_prompt": "original user input"
     }
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     user_input = data.get("prompt")
 
     # Validate input
@@ -167,12 +172,15 @@ def run_command():
         "error": "error output (if any)"
     }
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     host = data.get("host")
     username = data.get("username")
     password = data.get("password")
     command = data.get("command")
-    port = data.get("port", 22)
+    try:
+        port = int(data.get("port", 22))
+    except (TypeError, ValueError):
+        return jsonify({"error": "port must be an integer"}), 400
 
     # Validate required parameters
     if not host or not username or not command:
@@ -184,7 +192,10 @@ def run_command():
         return jsonify({"error": f"SSH connection failed for {username}@{host}"}), 500
 
     # Execute the command and return results
-    output, error = run_shell(command, ssh_client=ssh_client)
+    try:
+        output, error = run_shell(command, ssh_client=ssh_client)
+    finally:
+        ssh_client.close()
     return jsonify({"output": output, "error": error})
 
 @app.route("/analyze-failure", methods=["POST"])
@@ -287,11 +298,10 @@ def troubleshoot():
         "requires_confirmation": boolean
     }
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     error_text = data.get("error_text")
     host = data.get("host")
     username = data.get("username")
-    port = int(data.get("port", 22))
     context = data.get("context", {})
     
     # Validate required parameters
@@ -354,13 +364,16 @@ def troubleshoot_execute():
         "summary": "execution summary"
     }
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     commands = data.get("commands", [])
     step_type = data.get("step_type", "unknown")
     host = data.get("host")
     username = data.get("username")
     password = data.get("password")
-    port = int(data.get("port", 22))
+    try:
+        port = int(data.get("port", 22))
+    except (TypeError, ValueError):
+        return jsonify({"error": "port must be an integer"}), 400
     
     # Validate required parameters
     if not commands:
@@ -377,19 +390,19 @@ def troubleshoot_execute():
     # Execute commands using the troubleshooting workflow engine
     workflow = TroubleshootWorkflow(ssh_client)
     
-    # Choose execution method based on step type
-    if step_type == "diagnostic":
-        results = workflow.run_diagnostics(commands)
-    elif step_type == "fix":
-        results = workflow.run_fixes(commands)
-    elif step_type == "verification":
-        results = workflow.run_verification(commands)
-    else:
-        # Generic command execution
-        results = workflow.execute_commands(commands, step_type)
-    
-    # Clean up SSH connection
-    ssh_client.close()
+    try:
+        # Choose execution method based on step type
+        if step_type == "diagnostic":
+            results = workflow.run_diagnostics(commands)
+        elif step_type == "fix":
+            results = workflow.run_fixes(commands)
+        elif step_type == "verification":
+            results = workflow.run_verification(commands)
+        else:
+            # Generic command execution
+            results = workflow.execute_commands(commands, step_type)
+    finally:
+        ssh_client.close()
     
     return jsonify(results)
 
@@ -1364,11 +1377,11 @@ def fetch_console_from_url():
             finally:
                 jenkins_service.close()
         else:
-            # Direct fetch from URL (less secure but works for public Jenkins)
+            # Direct fetch from URL (unauthenticated; only works for public Jenkins)
             import requests
             direct_url = console_url.replace('/console', '/consoleText')
             logger.info("Direct console fetch (no auth): url=%s", direct_url)
-            response = requests.get(direct_url, verify=False, timeout=30)
+            response = requests.get(direct_url, timeout=30)
             
             if response.status_code in (401, 403):
                 logger.error("Direct console fetch failed with auth error: status=%s reason=%s", response.status_code, response.reason)
@@ -1599,7 +1612,6 @@ def execute_fix_commands():
     
     Request body:
     {
-        "fix_history_id": 123,
         "commands": ["sudo systemctl restart nginx"],
         "server_profile_id": "profile123" (optional),
         "host": "server.example.com",
@@ -1608,32 +1620,33 @@ def execute_fix_commands():
     }
     """
     try:
-        data = request.get_json()
-        fix_history_id = data.get('fix_history_id')
+        data = request.get_json(silent=True) or {}
         commands = data.get('commands', [])
         server_profile_id = data.get('server_profile_id')
         host = data.get('host')
         username = data.get('username')
         password = data.get('password')
+        try:
+            port = int(data.get('port', 22))
+        except (TypeError, ValueError):
+            return jsonify({"error": "port must be an integer"}), 400
         
         if not commands:
             return jsonify({"error": "No commands provided"}), 400
-        
-        # Update fix history to mark as confirmed
-        fix_history = None
-        if fix_history_id:
-            # Note: We would need to add an update method to FixHistory model
-            # For now, we'll create a new record
-            pass
         
         # Execute commands via SSH
         ssh_client = None
         if server_profile_id:
             # Use profile-based connection
-            ssh_client = run_shell("echo 'Connected'", profile_id=server_profile_id)[0]
+            from ai_shell_agent.modules.ssh.client import connect_with_profile
+            from ai_shell_agent.modules.ssh.session_manager import _get_profile_by_id
+            profile = _get_profile_by_id(server_profile_id)
+            if not profile:
+                return jsonify({"error": f"Profile {server_profile_id} not found"}), 404
+            ssh_client = connect_with_profile(profile)
         elif host and username:
             # Use direct connection parameters
-            ssh_client = create_ssh_client(host, username, 22, password)
+            ssh_client = create_ssh_client(host, username, port, password)
         else:
             return jsonify({"error": "Either server_profile_id or host/username must be provided"}), 400
         
@@ -1644,44 +1657,36 @@ def execute_fix_commands():
         results = []
         all_success = True
         
-        for cmd in commands:
-            try:
-                output, error = run_shell(cmd, ssh_client=ssh_client)
-                
-                command_result = {
-                    "command": cmd,
-                    "output": output,
-                    "error": error,
-                    "success": len(error.strip()) == 0,
-                    "execution_time": datetime.now(timezone.utc).isoformat()
-                }
-                
-                results.append(command_result)
-                
-                if not command_result["success"]:
-                    all_success = False
+        try:
+            for cmd in commands:
+                try:
+                    output, error = run_shell(cmd, ssh_client=ssh_client)
                     
-            except Exception as e:
-                command_result = {
-                    "command": cmd,
-                    "output": "",
-                    "error": str(e),
-                    "success": False,
-                    "execution_time": datetime.now(timezone.utc).isoformat()
-                }
-                results.append(command_result)
-                all_success = False
-        
-        # Update fix history if available
-        if fix_history_id and fix_history:
-            fix_history.execution_result = {
-                "commands_executed": len(commands),
-                "successful_commands": sum(1 for r in results if r["success"]),
-                "execution_summary": results
-            }
-            fix_history.user_confirmed = True
-            fix_history.success = all_success
-            fix_history.save()
+                    command_result = {
+                        "command": cmd,
+                        "output": output,
+                        "error": error,
+                        "success": len(error.strip()) == 0,
+                        "execution_time": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    results.append(command_result)
+                    
+                    if not command_result["success"]:
+                        all_success = False
+                        
+                except Exception as e:
+                    command_result = {
+                        "command": cmd,
+                        "output": "",
+                        "error": str(e),
+                        "success": False,
+                        "execution_time": datetime.now(timezone.utc).isoformat()
+                    }
+                    results.append(command_result)
+                    all_success = False
+        finally:
+            ssh_client.close()
         
         return jsonify({
             "success": True,
@@ -1874,14 +1879,19 @@ def delete_ansible_config(config_id: int):
 
 # Initialize SocketIO for real-time terminal communication
 # Use threading mode for better Windows compatibility
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# The frontend is served by this app (same origin), so cross-origin access is
+# disabled unless explicitly allowed via OPSPILOT_CORS_ORIGINS (comma-separated).
+_cors_origins = [o.strip() for o in os.environ.get("OPSPILOT_CORS_ORIGINS", "").split(",") if o.strip()]
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins or None, async_mode='threading')
 
-# Add CORS headers for all routes
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    origin = request.headers.get("Origin")
+    if origin and origin in _cors_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Vary'] = 'Origin'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
 # Dictionary to store active SSH sessions by session ID
@@ -1904,19 +1914,6 @@ def _cleanup_session(sid: str):
             session["client"].close()
         except Exception:
             pass
-
-# @app.route("/terminal")
-# def terminal():
-#     """
-#     Serve terminal interface (legacy route with hardcoded values).
-#     Note: This route contains hardcoded connection details and should be updated
-#     to use dynamic parameters or removed if not needed.
-#     """
-#     # TODO: Remove hardcoded values or make this route dynamic
-#     ip = "10.4.5.70" 
-#     user = "root"
-#     password = ""
-#     return render_template("terminal.html", ip=ip, user=user, password=password)
 
 def _reader_thread(sid: str):
     """
@@ -1955,8 +1952,40 @@ def _reader_thread(sid: str):
         # Send error message to client
         _emit_output(sid, f"\r\n[reader error] {e}\r\n")
     finally:
-        # Clean up session on thread exit
-        _cleanup_session(sid)
+        # Clean up on thread exit, but not a newer session started on the same sid
+        if ssh_sessions.get(sid) is session:
+            _cleanup_session(sid)
+
+@app.route("/guest/status", methods=["GET"])
+def guest_status():
+    """Report whether guest mode (local terminal) is available to this client."""
+    allowed, reason = local_terminal.availability(
+        request.remote_addr, request.headers.get("X-Forwarded-For")
+    )
+    return jsonify({"available": allowed, "reason": reason})
+
+@socketio.on("start_local")
+def start_local(data=None):
+    """
+    Guest mode: open a shell on the machine running OpsPilot.
+    Reuses the same session registry and handlers as SSH sessions.
+    """
+    sid = request.sid
+    allowed, reason = local_terminal.availability(
+        request.remote_addr, request.headers.get("X-Forwarded-For")
+    )
+    if not allowed:
+        emit("terminal_output", {"output": f"\r\n[Guest mode unavailable] {reason}\r\n"})
+        return
+
+    _cleanup_session(sid)
+    try:
+        client, chan = local_terminal.open_local_session()
+        ssh_sessions[sid] = {"client": client, "chan": chan}
+        threading.Thread(target=_reader_thread, args=(sid,), daemon=True).start()
+        emit("terminal_output", {"output": f"Connected to local terminal as {os.getenv('USER', 'guest')}\r\n"})
+    except Exception as e:
+        emit("terminal_output", {"output": f"\r\nFailed to start local terminal: {e}\r\n"})
 
 @socketio.on("start_ssh")
 def start_ssh(data):
@@ -1978,17 +2007,8 @@ def start_ssh(data):
     password = (data or {}).get("password", "")
     
     # Close existing session if any
-    old = ssh_sessions.pop(sid, None)
-    if old:
-        try: 
-            old["chan"].close()
-        except Exception: 
-            pass
-        try: 
-            old["client"].close()
-        except Exception: 
-            pass
-    
+    _cleanup_session(sid)
+
     try:
         client = None
         
@@ -2143,8 +2163,13 @@ def on_disconnect():
 if __name__ == "__main__":
     # Get port from environment variable or default to 8080
     port = int(os.environ.get("PORT", 8080))
-    
-    print(f"Starting OpsPilot server on port {port}...")
+    # Listen on loopback by default; set HOST=0.0.0.0 to expose the server (e.g. in Docker)
+    host = os.environ.get("HOST", "127.0.0.1")
+
+    print(f"Starting OpsPilot server on {host}:{port}...")
     # Run the Flask application with SocketIO support
     # Use threading mode for Windows compatibility
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    # allow_unsafe_werkzeug: threading mode uses Werkzeug's dev server, which
+    # Flask-SocketIO refuses to start without this flag
+    socketio.run(app, host=host, port=port, debug=False, use_reloader=False,
+                 allow_unsafe_werkzeug=True)

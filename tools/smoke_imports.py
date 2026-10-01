@@ -12,7 +12,6 @@ modules_to_test = [
     'flask',
     'flask_socketio',
     'paramiko',
-    'eventlet',
     'joblib',
     'sklearn',
     'numpy',
@@ -22,8 +21,7 @@ modules_to_test = [
     'ai_shell_agent.modules.cicd',
     'ai_shell_agent.modules.ssh',
     'ai_shell_agent.modules.command_generation',
-    'ai_shell_agent.modules.monitoring.real_time_monitor',
-    'ai_shell_agent.modules.prediction.failure_predictor'
+    'ai_shell_agent.modules.troubleshooting'
 ]
 
 results = {}

@@ -261,7 +261,11 @@ function reconnectTerminal() {
     return;
   }
   if (state.socket) {
-    state.socket.emit('start_ssh', { ip: state.currentHost, user: state.currentUser, password: state.currentPassword });
+    if (state.localMode) {
+      state.socket.emit('start_local', {});
+    } else {
+      state.socket.emit('start_ssh', { ip: state.currentHost, user: state.currentUser, password: state.currentPassword });
+    }
   }
 }
 

@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Default port (can be overridden by environment)
-ENV PORT=8080
+ENV PORT=8080 \
+    HOST=0.0.0.0
 
 # Run the OpsPilot application
 CMD ["python", "app.py"]

@@ -57,13 +57,9 @@ function initializeTerminal() {
   // Connect terminal to socket
   state.socket.on("connect", () => {
     clearTimeout(connectionTimeout);
-    
-    state.socket.emit("start_ssh", {
-      ip: state.currentHost,
-      user: state.currentUser,
-      password: state.currentPassword || ""
-    });
-    
+
+    startTerminalSession();
+
     // Set connection timeout
     connectionTimeout = setTimeout(() => {
       if (!state.terminalConnected) {
@@ -79,13 +75,9 @@ function initializeTerminal() {
 
   // Auto re-authenticate on reconnects
   state.socket.on('reconnect', () => {
-    if (typeof showToast === 'function') showToast("Reconnected. Restoring SSH session...", 'info');
-    if (state.currentHost && state.currentUser) {
-      state.socket.emit('start_ssh', {
-        ip: state.currentHost,
-        user: state.currentUser,
-        password: state.currentPassword || ""
-      });
+    if (typeof showToast === 'function') showToast(state.localMode ? "Reconnected. Restoring local session..." : "Reconnected. Restoring SSH session...", 'info');
+    if (state.localMode || (state.currentHost && state.currentUser)) {
+      startTerminalSession();
     }
   });
 
@@ -175,13 +167,51 @@ function clearTerminal() {
  */
 function reconnectTerminal() {
   if (state.socket) {
+    startTerminalSession();
+    appendMessage("Reconnecting to terminal...", "system");
+  }
+}
+
+/**
+ * Start the terminal session for the current mode:
+ * a local shell in guest mode, otherwise an SSH session.
+ */
+function startTerminalSession() {
+  if (state.localMode) {
+    state.socket.emit("start_local", {});
+  } else {
     state.socket.emit("start_ssh", {
       ip: state.currentHost,
       user: state.currentUser,
       password: state.currentPassword || ""
     });
-    appendMessage("Reconnecting to terminal...", "system");
   }
+}
+
+/**
+ * Guest mode: open a terminal on the machine running OpsPilot (no SSH).
+ */
+function connectLocal() {
+  state.localMode = true;
+  state.currentHost = "localhost";
+  state.currentUser = "guest";
+  state.currentPassword = "";
+
+  document.getElementById("login-screen").classList.add("hidden");
+  document.getElementById("main-screen").classList.remove("hidden");
+
+  try { if (window.openTerminalSplit) window.openTerminalSplit(); } catch (_) {}
+
+  initializeTerminal();
+
+  const title = document.querySelector("#terminal-panel .terminal-title");
+  if (title) title.textContent = "Terminal (Guest - local)";
+
+  // Server profiling works over SSH only, so guest mode uses generic command suggestions
+  state.systemAware = false;
+  appendMessage("👤 Guest mode: commands run in a terminal on this machine. AI suggestions are generic (no server profile).", "system");
+
+  document.getElementById("user-input").focus();
 }
 
 // Namespacing shim for modularity (non-breaking)
@@ -192,7 +222,8 @@ function reconnectTerminal() {
       initializeTerminal,
       clearTerminal,
       reconnectTerminal,
-      connectSSH
+      connectSSH,
+      connectLocal
     };
   } catch (_) { /* ignore if window not available */ }
 })();
@@ -213,6 +244,7 @@ function connectSSH() {
   }
 
   // Save credentials for later use
+  state.localMode = false;
   state.currentHost = host;
   state.currentUser = user;
   state.currentPassword = password;
