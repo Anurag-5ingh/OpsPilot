@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from ..command_generation import ask_ai_for_command
 from ..shared import ConversationMemory
-from ..shared.ai_client import get_openai_client
+from ..shared.ai_client import get_openai_client, AI_MODEL, ai_extra_query
 from ..system_awareness import SystemContextManager
 from .models import BuildLog, FixHistory
 from .jenkins_service import JenkinsService
@@ -251,9 +251,9 @@ class AILogAnalyzer:
             ]
             
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=AI_MODEL,
                 messages=messages,
-                extra_query={"api-version": "2024-08-01-preview"},
+                extra_query=ai_extra_query(),
                 temperature=0.1,  # Very low temperature for accurate analysis
                 response_format={"type": "json_object"}  # Require JSON output
             )

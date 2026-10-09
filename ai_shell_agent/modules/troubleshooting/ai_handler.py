@@ -4,7 +4,7 @@ Handles error analysis and multi-step remediation
 """
 import json
 from .prompts import get_troubleshoot_prompt
-from ai_shell_agent.modules.shared.ai_client import get_openai_client
+from ai_shell_agent.modules.shared.ai_client import get_openai_client, AI_MODEL, ai_extra_query
 
 # GPT-4o-mini client setup via shared client
 client = get_openai_client()
@@ -82,11 +82,11 @@ def ask_ai_for_troubleshoot(error_text: str, context: dict = None, history: list
     messages.append({"role": "user", "content": user_message})
     
     try:
-        # Call GPT-4o-mini via Bosch internal endpoint for troubleshooting analysis
+        # Call the configured AI model for troubleshooting analysis
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=AI_MODEL,
             messages=messages,
-            extra_query={"api-version": "2024-08-01-preview"},
+            extra_query=ai_extra_query(),
             temperature=0.2,  # Lower temperature for consistent, reliable troubleshooting
             response_format={"type": "json_object"}  # Ensure structured JSON response
         )

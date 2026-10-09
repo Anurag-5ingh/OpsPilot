@@ -1,113 +1,128 @@
 # OpsPilot Setup Guide
 
-## Prerequisites
-### 1. Install Python 3.8 or higher
-   - Download from: https://www.python.org/downloads/
-   - Make sure to check "Add Python to PATH" during installation
-   - Verify installation: `python --version`
+This guide takes you from a fresh machine to a running OpsPilot, one step at a time. For a shorter version, see the Quick start in [README.md](README.md).
 
-### 2. Install Git (if not already installed)
-   - Download from: https://git-scm.com/downloads
+## 1. Prerequisites
 
-## Installation Instructions
+| Tool | Version | Check with |
+|---|---|---|
+| Python | 3.9 or newer (3.11 recommended) | `python3 --version` (macOS/Linux) or `python --version` (Windows) |
+| git | any recent | `git --version` |
 
-### Step 1: Install Python Dependencies
+Where to get them:
 
-Run these commands in your terminal:
+- **Python**: https://www.python.org/downloads/. On Windows, tick **"Add Python to PATH"** in the installer.
+- **git**: https://git-scm.com/downloads
+
+## 2. Get the code
 
 ```bash
-# Navigate to the project directory
-cd path/to/OpsPilot-main
+git clone https://github.com/Anurag-5ingh/OpsPilot.git
+cd OpsPilot
+```
 
-# Install required packages
+## 3. Create a virtual environment
+
+A virtual environment keeps OpsPilot's packages separate from the rest of your system.
+
+**macOS / Linux**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows (PowerShell)**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+When it's active, your prompt starts with `(.venv)`. Activate it again in every new terminal before running OpsPilot.
+
+> **Windows: "running scripts is disabled on this system"?** Run this once, then try again:
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+## 4. Install dependencies
+
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-If pip doesn't work, try:
+**If this fails with `401` or "No matching distribution found":** your pip is set to use a private package index. Install from public PyPI instead:
+
 ```bash
-python -m pip install -r requirements.txt
+pip install --index-url https://pypi.org/simple -r requirements.txt
 ```
 
-### Step 2: Environment Setup
-
-Create a `.env` file in the `opsPilot` directory:
+Optionally, check that everything imports:
 
 ```bash
-# SSH Configuration
-REMOTE_HOST=your-ssh-host
-REMOTE_USER=your-ssh-username
-REMOTE_PORT=22
-
-# OpenAI Configuration (Required for AI functionality)
-OPENAI_API_KEY=your-openai-api-key-missing-from-code
-
-# Optional: Change secret key for production
-APP_SECRET=your-secret-key-for-flask-sessions
+python tools/smoke_imports.py
 ```
 
-### Step 3: Run the Application
+Every line should say `ok`.
 
-#### Web Interface:
+## 5. Configure (optional)
+
+OpsPilot runs without any configuration. To change settings, create a `.env` file in the project root (it's git-ignored):
+
 ```bash
-# From project root
+# Port to serve on (default 8080)
+PORT=8080
+
+# Flask session secret. Change it if anyone else can reach the server.
+APP_SECRET=replace-with-a-long-random-string
+
+# Set to false to disable guest mode (the local terminal)
+# OPSPILOT_LOCAL_TERMINAL=false
+```
+
+The full list of settings is in [README.md](README.md#configuration).
+
+**About the AI:** AI suggestions need an OpenAI-compatible API key. The easiest way is to copy the example file and fill it in:
+
+```bash
+cp .env.example .env        # Windows: copy .env.example .env
+```
+
+Then set `OPENAI_API_KEY` (and `OPENAI_BASE_URL` if you don't use OpenAI itself). Without a key, everything except the AI suggestions still works.
+
+## 6. Run
+
+```bash
 python app.py
 ```
-Then visit: http://localhost:8080/opspilot
 
-#### Syntax check (optional but recommended):
-```bash
-python -m compileall -q .
+Wait for this line:
+
+```
+ * Running on http://127.0.0.1:8080
 ```
 
-#### CLI Interface (if present):
-```bash
-python main.py
-```
+Then open **http://127.0.0.1:8080/opspilot** in your browser. To stop the server, press `Ctrl+C`.
 
-## Required Environment Variables
+## 7. Connect a terminal
 
-Your code is configured to use Bosch internal AI API, but you need these environment variables:
+Pick one of these on the login card.
 
-1. **SSH Credentials**: SSH connection details for the target server
-2. **OpenAI API Key**: Based on your ai_command.py, you're using Bosch internal GPT-4o-mini
-3. **Secret Key**: Flask secret key for sessions
+**Guest mode (no server needed, macOS/Linux)**
+- Click **Guest Mode (Local Terminal)**.
+- A terminal opens on your own machine, running as your user.
 
-## Important Notes
+**SSH to a server**
+- Enter the host and username, plus a password if you use one, and click **Connect**.
+- Or click **Profiles** to save a reusable connection. See [docs/SSH.md](docs/SSH.md).
 
-1. **SSH Requirements**: Your application requires SSH key-based authentication or password
-2. **Network Access**: Ensure your network allows SSH connections to target servers
-3. **Port**: Default web interface runs on port 8080
-4. **No Database Required**: Application runs without database dependencies
+Then type a request in the chat, for example "show the 5 largest files in my home folder", and run the command it suggests.
 
 ## Troubleshooting
 
-### Python Not Found
-- Ensure Python is added to your PATH environment variable
-- Try `python3` instead of `python`
-- On Windows, try `py` command
-
-### SSH Connection Issues
-- Verify SSH credentials
-- Check SSH key permissions (should be readable)
-- Test SSH connection manually: `ssh username@host`
-
-### Package Installation Issues
-- Try upgrading pip: `python -m pip install --upgrade pip`
-- Use virtual environment: `python -m venv venv` then `venv\Scripts\activate` (Windows)
-
-## Features Available After Installation
-
-✅ Web-based SSH terminal interface
-✅ AI-powered command generation
-✅ SSH connection management
-✅ Real-time terminal via WebSocket
-✅ CLI interface for direct SSH access
-
-## Missing/Dependencies Issues
-
-If you encounter import errors, install missing packages:
-
-```bash
-pip install flask flask-socketio eventlet paramiko openai python-dotenv
-```
-
+| Problem | Fix |
+|---|---|
+| `python: command not found` | Use `python3` (macOS/Linux) or `py` (Windows), or reinstall Python with "Add to PATH" ticked. |
+| `ModuleNotFoundError` when starting | The virtual environment isn't active. Run the activate command from step 3, then run `python app.py` again. |
+| `Address already in use` | Port 8080 is taken. Run `PORT=8081 python app.py` (or `$env:PORT=8081; python app.py` on Windows). |
+| No **Guest Mode** button | Open the page as `127.0.0.1` or `localhost` from the same machine. Guest mode isn't available on Windows or in Docker. |
+| SSH connection fails | Test it outside OpsPilot first: `ssh -v user@host`. |
+| AI suggestions fail | Set `OPENAI_API_KEY` in `.env` and restart. For Azure or another provider, also set `OPENAI_BASE_URL` (see the README's AI provider section). |

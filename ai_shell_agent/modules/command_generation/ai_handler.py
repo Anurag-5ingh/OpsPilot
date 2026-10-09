@@ -7,7 +7,7 @@ from .prompts import get_system_prompt
 from .risk_analyzer import CommandRiskAnalyzer
 from .fallback_analyzer import CommandFallbackAnalyzer
 from .ml_risk_scorer import MLRiskScorer
-from ai_shell_agent.modules.shared.ai_client import get_openai_client
+from ai_shell_agent.modules.shared.ai_client import get_openai_client, AI_MODEL, ai_extra_query
 
 # GPT-4o-mini client setup via shared client
 client = get_openai_client()
@@ -74,11 +74,11 @@ def ask_ai_for_command(user_input: str, memory: list = None, system_context=None
     messages.append({"role": "user", "content": user_input})
 
     try:
-        # Call GPT-4o-mini via Bosch internal endpoint
+        # Call the configured AI model
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=AI_MODEL,
             messages=messages,
-            extra_query={"api-version": "2024-08-01-preview"},
+            extra_query=ai_extra_query(),
             temperature=0.3,  # Low temperature for consistent command generation
             response_format={"type": "json_object"}  # Ensure structured JSON response
         )

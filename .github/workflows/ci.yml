@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile Python
+        run: python -m compileall -q app.py main.py ai_shell_agent tools
+
+      - name: Import all modules
+        run: python tools/smoke_imports.py
+
+      - name: Check JavaScript syntax
+        run: find frontend site -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Start server and check endpoints
+        run: |
+          PORT=8080 python app.py > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/opspilot && break
+            sleep 1
+          done
+
+          echo "UI page is served"
+          curl -fsS http://127.0.0.1:8080/opspilot | grep -q "guest-button"
+
+          echo "Guest mode is offered to a local client"
+          curl -fsS http://127.0.0.1:8080/guest/status | grep -q '"available":true'
+
+          echo "Unknown static paths return 404"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/does-not-exist.js)" = 404
+
+          echo "/run rejects a request without host/command"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/run)" = 400
+
+      - name: Server log
+        if: always()
+        run: cat server.log || true

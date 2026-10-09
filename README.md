@@ -1,1009 +1,275 @@
 # OpsPilot
 
-AI-powered DevOps assistant that provides an interactive terminal, AI command generation, troubleshooting, and SSH profile management.
+[![CI](https://github.com/Anurag-5ingh/OpsPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Anurag-5ingh/OpsPilot/actions/workflows/ci.yml)
 
-This README covers local development (Windows / PowerShell), how to run the server, how to use the SSH Profiles UI, and how to test profile connectivity.
+**Project page:** https://anurag-5ingh.github.io/OpsPilot/
 
-## Quick start (Windows / PowerShell)
+OpsPilot is an AI DevOps assistant in your browser. It gives you a live terminal next to an AI chat: describe what you want in plain English, get a shell command back, and run it in the terminal. It also walks you through troubleshooting errors and analyzes Jenkins build logs.
 
-Note: The UI defaults to an AI chat page; the Terminal is available via the top-right "Terminal" button and opens on the right side.
+The terminal can connect two ways:
 
-1. Install Python dependencies (recommended to use a virtual environment):
-
-```powershell
-# Create & activate venv (optional but recommended)
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-2. Start the server (this serves the frontend and the REST + WebSocket APIs):
-
-```powershell
-python .\app.py
-```
-
-3. Open the UI in your browser:
-
-http://127.0.0.1:8080/opspilot
-
-The server defaults to port `8080`. You can override with the `PORT` environment variable.
-
-## Project layout (important files)
-
-- `app.py` — Flask + Flask-SocketIO application entrypoint. Serves the frontend and provides REST & WebSocket APIs.
-- `frontend/` — Static web UI (HTML, CSS, JS).
-- `frontend/index.html` — Main UI page (served at `/opspilot`).
-- `frontend/js/profiles.js` — Frontend logic for SSH profiles (load, test, save, delete).
-- `ai_shell_agent/modules/ssh/session_manager.py` — Backend routes for profile management and testing (`/ssh/list`, `/ssh/test`, `/ssh/save`, `/ssh/delete/<id>`).
-- `ai_shell_agent/data/ssh_profiles.json` — Where profiles are stored (created automatically when you save a profile).
-
-## SSH Profiles: Using the UI
-
-1. Open the app and click `Profiles` on the login card.
-2. If you have no saved profiles you'll see: "No profiles saved. Click \"Add Profile\" to create your first connection profile.".
-3. Click `Add Profile` and fill in:
-   - Profile Name
-   - Host
-   - Port (defaults to 22)
-   - Username
-   - Authentication Method — choose `Private Key File` (if using a PEM/ED25519 key) or `Password`.
-   - Host Key Verification — `ask`, `yes` (strict), or `no` (auto-add).
-   - Optional: configure a Bastion/Jump host.
-
-4. You can use the `Test Connection` button to validate credentials before saving. The test will run against the backend `/ssh/test` endpoint and show success / failure in the UI.
-
-5. After a successful test, `Save Profile` will persist the non-sensitive profile metadata to `ai_shell_agent/data/ssh_profiles.json`. Sensitive fields (passwords, passphrases, private key content) are stored separately by the backend's secrets manager.
-
-Notes about private keys
-- When selecting `Private Key File`, the frontend will send the `key_path` to the backend. The server process must have access to that file path to use it for testing/connecting.
-- Alternatively, you can paste private key content (future enhancement) or make sure the server runs on the same machine where the key file resides.
-
-## REST endpoints (useful for testing)
-
-### CI/CD configuration helpers
-- `POST /cicd/jenkins/connect` (API token required; password optional)
-- `DELETE /cicd/jenkins/configs/{id}`
-- `POST /cicd/ansible/connect`
-- `DELETE /cicd/ansible/configs/{id}`
-
-- `GET /ssh/list` — returns saved profiles (non-sensitive fields only).
-- `POST /ssh/test` — run a connection test using JSON payload. Example payload (PowerShell):
-
-```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:8080/ssh/test' -Method Post -Body (ConvertTo-Json @{
-    host='your.host.or.ip';
-    username='ubuntu';
-    port=22;
-    auth_method='key';
-    key_path='C:\Users\you\\.ssh\\id_ed25519'
-}) -ContentType 'application/json'
-```
-
-- `POST /ssh/save` — save profile metadata. The backend will validate and store non-sensitive fields in `ai_shell_agent/data/ssh_profiles.json`. Sensitive data is stored using the project's secret manager.
-
-- `DELETE /ssh/delete/<profile_id>` — delete a saved profile and any associated secrets.
-
-## CI/CD Jenkins Integration (Logs Mode)
-
-Use the Logs mode to analyze Jenkins build logs and get AI fix suggestions.
-
-### UI workflow
-1. Click the Logs tab in the header.
-2. Click Configure next to Jenkins and enter:
-   - Name, Base URL, Username
-   - API Token (required), Password (optional)
-3. After a successful save, the Jenkins dropdown will list your configuration(s).
-4. Paste a Jenkins console URL (ends with `/console`) and click Analyze Console.
-5. In the popup:
-   - Close with the X or Close button
-   - Click Analyze & Suggest Fix to run AI analysis
-
-### Backend endpoints
-- POST /cicd/jenkins/connect
-  - Body: { name, base_url, username, api_token, password?, user_id }
-  - Stores secrets securely; tests the connection before saving
-- GET /cicd/jenkins/configs?user_id=system
-  - Lists saved Jenkins configurations
-- POST /cicd/jenkins/console
-  - Body: { console_url, jenkins_config_id? }
-  - Parses job/build and returns console text (auth-aware if config id provided)
-- POST /cicd/analyze/console
-  - Body: { console_log, job_name, build_number, jenkins_config_id? }
-  - Runs AI error analysis on raw console text
-- GET /cicd/builds?jenkins_config_id=ID&server_name=&limit=20
-  - Fetches recent builds and stores them locally
-- GET /cicd/builds/{id}/logs?jenkins_config_id=ID&lines=200
-  - Returns tail of console log for a stored build
-- POST /cicd/builds/{id}/analyze
-  - Runs AI analysis for a stored build
-
-### Troubleshooting
-- Dropdown shows blank/empty:
-  - Check GET /cicd/jenkins/configs?user_id=system returns 200 with configs
-  - If 500, restart server to apply DB migration (adds api_token_secret_id) and check logs
-- Console popup buttons unresponsive:
-  - Fixed with delegated handlers in `frontend/js/logsMode.js` and higher z-index
-- Jenkins auth issues on logs fetch:
-  - Backend logs now show whether auth header is present and HTTP error details
-
-## Notes about recent frontend fixes
-
-I updated `frontend/js/profiles.js` to address three UI problems reported:
-
-1. The Profiles modal previously showed a generic "Failed to load profiles" immediately when opened (even when there were simply no profiles saved). The frontend now preserves the empty-state message and only shows the error UI for network/server errors.
-2. The `Test Connection` button was not showing results because form validation blocked the test flow (it required a profile name). The Test flow now skips that `name` validation so tests run immediately and show success/error.
-3. The save flow now reloads profiles and the profiles list rendering is more resilient so the UI won't be left in an inconsistent state after save/delete.
-
-If you still see problems after pulling the latest code:
-
-- Open browser devtools (Network tab) and check the `/ssh/list` and `/ssh/test` calls for response status and body.
-- Check server logs printed by `app.py` for exceptions while handling profile save/test.
-- Confirm the server process can read any private key paths you supply.
-
-## Troubleshooting
-
-- If the UI shows network errors on profile load, confirm the server is running and reachable at the same host and port used by the browser (defaults to `http://127.0.0.1:8080`).
-- If `Test Connection` fails with an SSH error, try testing from the server machine with the same key and `ssh -vvv` to get more information.
-- If saving profiles fails, inspect `ai_shell_agent/data/ssh_profiles.json` file permissions and server logs.
-
-## Development notes
-
-- The app uses `Flask` + `Flask-SocketIO` (threading mode used on Windows in `app.py`).
-- For local UI development you can edit files in `frontend/` and refresh the browser.
-
-## License and contribution
-
-This repository contains a permissive MIT-style license (check `LICENSE` if present). Contributions are welcome — open PRs against the `local` branch.
+- **SSH mode** connects to a remote server, either directly or through a saved profile.
+- **Guest mode** opens a shell on your own machine, with no SSH or server needed.
 
 ---
-If you'd like, I can add a small `README.dev.md` with step-by-step debug commands and sample curl / PowerShell snippets for each endpoint. I can also add a UI note to allow pasting private-key content into the profile form.
-# OpsPilot - Enterprise AI DevOps Platform
 
-**OpsPilot** has evolved into a comprehensive, enterprise-grade AI DevOps platform that combines intelligent automation, proactive monitoring, predictive analytics, and robust recovery mechanisms. With advanced machine learning capabilities and multi-server orchestration, OpsPilot transforms complex DevOps operations into intelligent, secure, and reliable workflows.
+## Quick start
 
-## 🚀 **Platform Overview**
+You need **Python 3.9+** (3.11 recommended) and **git**.
 
-OpsPilot provides **seven major enhancement modules** that work together to deliver unprecedented intelligence and automation for DevOps operations:
+### macOS / Linux
 
-1. **🧠 Context-Aware Command Learning** - Adaptive learning from user patterns
-2. **📊 Real-time System Monitoring** - Proactive health tracking with ML anomaly detection
-3. **🔮 Predictive Failure Prevention** - ML-powered failure prediction and prevention
-4. **🌐 Multi-server Command Coordination** - Intelligent orchestration across multiple servers
-5. **🔄 Enhanced Command Rollback System** - Comprehensive recovery with system snapshots
-6. **🛡️ Security Compliance Checker** - ML-enhanced policy validation
-7. **📚 Smart Documentation Generator** - Automated documentation from command patterns
+```bash
+git clone https://github.com/Anurag-5ingh/OpsPilot.git
+cd OpsPilot
 
-## 🧠 **Intelligence & Learning Features**
-
-### 🎯 **Advanced Machine Learning**
-- **Multi-Model Ensemble**: Random Forest, Gradient Boosting, and Logistic Regression for superior accuracy
-- **Adaptive Risk Scoring**: Continuously evolving risk assessment based on execution outcomes
-- **Pattern Recognition**: Identifies user behavior patterns and system trends automatically
-- **Contextual Learning**: Learns from environment, timing, and user preferences
-- **Predictive Analytics**: Anticipates failures before they occur with high accuracy
-
-### 🔍 **Context-Aware Intelligence**
-- **User Behavior Modeling**: Analyzes command patterns, frequencies, and success rates
-- **Temporal Pattern Recognition**: Learns time-based usage patterns and preferences
-- **System Context Analysis**: Understands environment, load, and operational context
-- **Command Sequence Learning**: Recognizes common command sequences and workflows
-- **Auto-completion & Suggestions**: Intelligent command suggestions based on learned patterns
-
-### 🛡️ **Security & Compliance Intelligence**
-- **Multi-Framework Compliance**: SOX, PCI DSS, HIPAA, CIS, NIST policy validation
-- **ML-Enhanced Security**: Learns from security violations and improves detection
-- **Contextual Policy Enforcement**: Adapts security rules based on user role and environment
-- **Risk Assessment**: Comprehensive risk analysis for individual commands and operations
-- **Compliance Recommendations**: Suggests compliant alternatives for policy violations
-
-## 🚀 **Core Enhancement Modules**
-
-### 1. **🧠 Context-Aware Command Learning**
-**Adaptive learning system that becomes smarter with every interaction**
-
-- **Pattern Recognition**: Analyzes user command patterns, frequencies, and success rates
-- **Behavioral Modeling**: Learns individual user preferences and working patterns
-- **Contextual Recommendations**: Provides intelligent suggestions based on current context
-- **Auto-completion**: Smart command completion based on historical usage
-- **Success Prediction**: Estimates likelihood of command success in current context
-- **Workflow Recognition**: Identifies common command sequences and suggests next steps
-
-**Technical Implementation:**
-- TF-IDF vectorization for command similarity analysis
-- K-means clustering for pattern grouping
-- SQLite database for pattern storage and retrieval
-- Real-time feature extraction from execution context
-
-### 2. **📊 Real-time System Monitoring**
-**Proactive health tracking with ML-powered anomaly detection**
-
-- **Comprehensive Metrics**: CPU, memory, disk, network, processes, and services
-- **ML Anomaly Detection**: Isolation Forest algorithms for intelligent anomaly detection
-- **Intelligent Alerting**: Context-aware alerts with actionable recommendations
-- **Performance Trending**: Historical analysis and performance trend identification
-- **Health Scoring**: Overall system health score with risk assessment
-- **Auto-resolution**: Automatic alert resolution when conditions normalize
-
-**Technical Implementation:**
-- Multi-threaded metric collection with configurable intervals
-- Isolation Forest models for each metric type
-- Standard scaler for feature normalization
-- Sliding window training data management
-- Real-time alert generation with callback system
-
-### 3. **🔮 Predictive Failure Prevention**
-**ML-powered system that prevents failures before they occur**
-
-- **Failure Prediction**: Anticipates disk space, memory, CPU, and service failures
-- **Early Warning System**: Alerts before critical thresholds are reached
-- **Preventive Actions**: Automated execution of safe preventive measures
-- **Feature Engineering**: Advanced feature extraction from system metrics
-- **Ensemble Models**: Random Forest, Gradient Boosting, and Logistic Regression
-- **Risk Scoring**: Confidence-based prediction scoring system
-
-**Technical Implementation:**
-- Multi-model ensemble with weighted voting
-- Feature selection using SelectKBest and f_classif
-- Cross-validation for model performance assessment
-- ROC AUC scoring for binary classification accuracy
-- Automated model retraining with performance monitoring
-
-### 4. **🌐 Multi-server Command Coordination**
-**Enterprise-grade orchestration for complex multi-server operations**
-
-- **Execution Strategies**: Sequential, Parallel, Rolling, Canary, and Blue-Green deployments
-- **Dependency Management**: Intelligent resolution with topological sorting
-- **Risk Assessment**: ML-enhanced risk analysis for multi-server operations
-- **Failure Recovery**: Comprehensive rollback with configurable strategies
-- **Progress Tracking**: Real-time monitoring of orchestration progress
-- **SSH Pool Management**: Efficient connection pooling and reuse
-
-**Technical Implementation:**
-- Topological sorting for dependency resolution
-- ThreadPoolExecutor for concurrent command execution
-- SSH connection pooling with health checking
-- Comprehensive execution result tracking and analysis
-- Configurable rollback strategies with auto-execution
-
-### 5. **🔄 Enhanced Command Rollback System**
-**Comprehensive recovery mechanisms with system snapshots**
-
-- **System Snapshots**: File system, configuration, services, and environment snapshots
-- **Granular Rollback**: Step-by-step rollback with multiple recovery methods
-- **Recovery Points**: Comprehensive system state capture and restoration
-- **Automatic Rollback**: Intelligent rollback command generation
-- **Compression & Deduplication**: Efficient storage with smart deduplication
-- **Validation**: Post-rollback validation and verification
-
-**Technical Implementation:**
-- Multiple snapshot types with specialized handlers
-- Gzip compression for efficient storage
-- SHA256 hashing for content deduplication
-- SQLite database for operation tracking
-- Automatic rollback command generation based on operation type
-
-### 6. **🛡️ Security Compliance Checker**
-**ML-enhanced policy validation for enterprise security**
-
-- **Multi-Framework Support**: SOX, PCI DSS, HIPAA, CIS, NIST compliance validation
-- **Contextual Analysis**: Considers user role, environment, and system state
-- **ML Learning**: Learns from user approvals and violation patterns
-- **Alternative Suggestions**: Provides compliant command alternatives
-- **Risk Scoring**: Comprehensive risk assessment for policy violations
-- **Audit Trails**: Complete compliance audit logging
-
-**Technical Implementation:**
-- Regex and pattern-based policy matching
-- Context-aware rule evaluation
-- Machine learning from historical compliance decisions
-- Configurable policy frameworks and custom rules
-- Integration with existing security tools and workflows
-
-### 7. **📚 Smart Documentation Generator**
-**Automated documentation from command patterns and workflows**
-
-- **Pattern Analysis**: Analyzes frequently executed command sequences
-- **Automatic Runbooks**: Generates step-by-step operational procedures
-- **Troubleshooting Guides**: Creates guides based on error patterns
-- **Multiple Formats**: Supports Markdown, JSON, HTML, and plain text
-- **Risk Assessment**: Documents risk levels and safety considerations
-- **Template System**: Customizable documentation templates
-
-**Technical Implementation:**
-- Command sequence analysis and pattern recognition
-- Template-based documentation generation
-- Multiple output format support
-- Integration with command execution history
-- Automated documentation updates based on usage patterns
-
-## 🚀 Quick Installation & Setup
-
-### 1. Install OpsPilot
-
-```powershell
-# Clone or download OpsPilot
-git clone <repository-url>
-cd OpsPilot-main
-
-# Create virtual environment
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies (includes enhanced SSH support)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2. Enable Enhanced SSH (Recommended)
-
-```powershell
-# Copy environment template
-copy .env.example .env
-
-# Edit .env and set:
-# OSPILOT_SSH_ENHANCED=true
-```
-
-### 3. Set Up SSH Authentication
-
-**Option A: SSH Agent (Easiest)**
-```powershell
-# Start SSH agent (as Administrator)
-Start-Service ssh-agent
-
-# Add your key
-ssh-add C:\Users\YourName\.ssh\id_ed25519
-```
-
-**Option B: Generate New SSH Key**
-```powershell
-# Generate Ed25519 key (recommended)
-ssh-keygen -t ed25519 -C "your_email@example.com"
-
-# Add to SSH agent
-ssh-add ~/.ssh/id_ed25519
-```
-
-### 4. Launch OpsPilot
-
-```powershell
-# Start the web server
+cp .env.example .env      # then set OPENAI_API_KEY in .env (optional)
 python app.py
 ```
 
-🌍 **Web Interface**: http://localhost:8080/opspilot  
-💻 **Terminal Access**: Click "Profiles" to set up secure connections  
-🧠 **CLI Mode**: `python main.py` (optional)
+### Windows (PowerShell)
 
-### 5. First Connection
+```powershell
+git clone https://github.com/Anurag-5ingh/OpsPilot.git
+cd OpsPilot
 
-1. Click **"Profiles"** on login screen
-2. Click **"Add Profile"** 
-3. Fill in server details
-4. Choose **"SSH Agent"** auth method
-5. Click **"Test Connection"**
-6. Click **"Save Profile"**
-7. Select profile and **"Connect with Profile"**
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 
-## 🔒 **Enhanced SSH Authentication**
+copy .env.example .env    # then set OPENAI_API_KEY in .env (optional)
+python app.py
+```
 
-OpsPilot now includes enterprise-grade SSH authentication with:
+When you see `Running on http://127.0.0.1:8080`, open:
 
-- **🔑 SSH Key Authentication** (RSA, ECDSA, Ed25519)
-- **🤖 SSH Agent Integration** for seamless key management
-- **🛡️ Multi-Factor Authentication** via keyboard-interactive
-- **🏰 Bastion/Jump Host Support** for secure network access
-- **🔐 Secure Credential Storage** with OS keyring integration
-- **📋 Connection Profiles** for easy server management
-- **✅ Host Key Verification** to prevent MITM attacks
+**http://127.0.0.1:8080/opspilot**
 
-### Quick SSH Setup
+To stop the server, press `Ctrl+C`.
 
-1. **Enable Enhanced SSH Authentication:**
-   ```powershell
-   # Add to .env file
-   OSPILOT_SSH_ENHANCED=true
-   ```
+The UI and terminals (including guest mode) work without an AI key. You only need `OPENAI_API_KEY` for AI command suggestions and troubleshooting. See [AI provider](#ai-provider).
 
-2. **Install Additional Dependencies:**
-   ```powershell
-   pip install keyring cryptography
-   ```
+> **Install fails with `401` or "No matching distribution"?** Your pip is probably set to use a private package index. Install from public PyPI instead:
+> `pip install --index-url https://pypi.org/simple -r requirements.txt`
 
-3. **Set up SSH Agent (Windows):**
-   ```powershell
-   # Start SSH agent service (as Administrator)
-   Start-Service ssh-agent
-   
-   # Add your private key
-   ssh-add C:\Users\YourName\.ssh\id_ed25519
-   ```
+---
 
-4. **Create Connection Profile:**
-   - Open OpsPilot web interface
-   - Click "Profiles" on login screen
-   - Configure your server connection
-   - Test and save profile
+## Using OpsPilot
 
-📖 **[Complete SSH Setup Guide](docs/SSH.md)** - Detailed instructions for all authentication methods
+### Guest mode (local terminal)
 
-### SSH Authentication Methods
+Use this to try OpsPilot without a server.
 
-**🔑 SSH Agent (Recommended)**
-- Zero-password authentication
-- Secure key management via OS
-- Works with all key types (RSA, ECDSA, Ed25519)
+1. Open http://127.0.0.1:8080/opspilot.
+2. On the login card, click **Guest Mode (Local Terminal)**.
+3. A terminal opens on the right, running your own shell. Type in it directly, or ask the AI chat for a command.
 
-**🗝️ Private Key Files**
-- Direct key file authentication
-- Supports encrypted keys with passphrases
-- Automatic key type detection
+Things to know:
 
-**🔐 Multi-Factor Authentication**
-- Keyboard-interactive for OTP/TOTP
-- Seamless MFA prompt handling
-- Works with Google Authenticator, Duo, etc.
+- The shell runs **as the user who started `app.py`**, in your home directory. Anything you run there, or approve from the AI, runs on your machine.
+- The button only appears when the browser is on the **same machine** as the server. Requests from other machines, or through a reverse proxy, are refused.
+- It works on **macOS and Linux** only. On Windows the button is hidden, but SSH mode still works.
+- AI suggestions are generic in guest mode, because server profiling only works over SSH.
+- To turn it off, set `OPSPILOT_LOCAL_TERMINAL=false`.
 
-**🏰 Bastion/Jump Hosts**
-- Single-hop jump server support
-- Mixed authentication (agent to bastion, key to target)
-- Secure tunneling through intermediary servers
+### SSH mode (remote server)
 
-### Security Features
+**Quick connect:** on the login card, enter the host, username and (optionally) a password, then click **Connect**. If you leave the password empty, your SSH keys and agent are used.
 
-✅ **Host Key Verification** - SHA256 fingerprint validation  
-✅ **Secure Storage** - OS keyring + encrypted fallback  
-✅ **Audit Logging** - Complete connection attempt tracking  
-✅ **Zero Plaintext** - No passwords stored in plaintext  
-✅ **Backward Compatible** - Legacy password connections still work
+**Saved profiles** are the better choice for servers you use often:
+
+1. Click **Profiles**, then **Add Profile**.
+2. Fill in the name, host, port, username and auth method (SSH agent, key file, password, or keyboard-interactive for MFA). A bastion/jump host is optional.
+3. Click **Test Connection**, then **Save Profile**.
+4. Back on the login card, pick the profile and click **Connect with Profile**.
+
+Profile details are saved to `ai_shell_agent/data/ssh_profiles.json`. Passwords and passphrases are stored separately, in your OS keyring or an encrypted file. See **[docs/SSH.md](docs/SSH.md)** for keys, agents, MFA and bastion hosts.
+
+After you connect, OpsPilot profiles the server (OS, package manager, service manager) so the AI suggests commands that fit it.
+
+### Chat modes
+
+- **Command**: describe a task (for example "show disk usage by folder"). The AI suggests a command with a risk analysis, and you can run it in the terminal.
+- **Troubleshoot**: paste an error. The AI proposes diagnostic commands, then fixes and verification steps based on the output.
+- **Logs** (header tab): connect Jenkins and analyze a build's console log. See **[docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md)**.
+
+### CLI (optional)
+
+```bash
+python main.py
+```
+
+This is a text-only version. It asks for a host and username, then lets you request and run commands over SSH.
+
+---
 
 ## Configuration
 
-### SSH Enhanced Environment Variables
+All settings are optional environment variables. You can also put them in a `.env` file in the project root (start from `.env.example`). That file is git-ignored.
 
+| Variable | Default | What it does |
+|---|---|---|
+| `OPENAI_API_KEY` | *(unset)* | API key for AI features. Without it the app runs, but AI requests fail. |
+| `OPENAI_BASE_URL` | OpenAI's API | Use any OpenAI-compatible endpoint (Azure OpenAI, a gateway, a local model server). |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model name to request. |
+| `OPENAI_API_VERSION` | *(unset)* | Azure OpenAI only: sent as the `api-version` query parameter. |
+| `OPENAI_EXTRA_HEADERS` | *(unset)* | Extra request headers as JSON, e.g. `{"my-gateway-key": "..."}`. |
+| `PORT` | `8080` | Port the server listens on. |
+| `HOST` | `127.0.0.1` | Address to bind. Use `0.0.0.0` to expose it on your network (see Security). |
+| `OPSPILOT_LOCAL_TERMINAL` | `true` | Set to `false` to disable guest mode. |
+| `OPSPILOT_CORS_ORIGINS` | *(empty)* | Comma-separated list of extra origins allowed to call the API. By default only the app's own page can. |
+| `OSPILOT_SSH_ENHANCED` | `true` | Profile-based SSH with host key handling and secure secrets. |
+| `OSPILOT_MASTER_KEY` | *(auto)* | Encryption key for stored secrets when no OS keyring is available. |
+| `APP_SECRET` | `dev_secret_change_me` | Flask session secret. **Change this** if anyone else can reach the server. |
+| `REMOTE_HOST`, `REMOTE_USER`, `REMOTE_PASSWORD`, `REMOTE_PORT` | *(unset)* | Legacy fallback SSH target, used only when no host or profile is given. |
+
+Examples:
+
+```bash
+PORT=9000 python app.py                       # macOS / Linux
+```
 ```powershell
-# Enhanced SSH Authentication (Recommended)
-$env:OSPILOT_SSH_ENHANCED = "true"              # Enable enhanced SSH features
-$env:OSPILOT_MASTER_KEY = "your-base64-key"     # Optional: Custom encryption key
-
-# Legacy SSH Support (Fallback)
-$env:REMOTE_HOST = "10.0.0.1"                   # Default server
-$env:REMOTE_USER = "ubuntu"                     # Default username
-$env:REMOTE_PASSWORD = "password"               # Default password
-$env:REMOTE_PORT = "22"                         # Default port
-
-# Application Settings
-$env:APP_SECRET = "dev_secret_change_me"        # Flask secret key
-$env:LOG_LEVEL = "INFO"                         # Logging level
+$env:PORT=9000; python app.py                 # Windows PowerShell
 ```
 
-### Connection Methods Priority
+### AI provider
 
-1. **SSH Profiles** (when `OSPILOT_SSH_ENHANCED=true`)
-   - Secure credential storage
-   - Multiple authentication methods
-   - Host key verification
-   
-2. **Legacy Environment Variables** (fallback)
-   - Simple password authentication
-   - For backward compatibility
+OpsPilot works with any OpenAI-compatible API. Set it up in `.env`:
 
-## 📁 **Enhanced Project Structure**
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Azure OpenAI (example)
+OPENAI_API_KEY=your-azure-key
+OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT
+OPENAI_API_VERSION=2024-08-01-preview
+```
+
+Without a key, or if the endpoint isn't reachable, the UI and terminals still work, but AI suggestions fail. The client is set up in `ai_shell_agent/modules/shared/ai_client.py`.
+
+---
+
+## Docker
+
+```bash
+docker build -t opspilot .
+docker run --rm -p 8080:8080 opspilot
+```
+
+Then open http://127.0.0.1:8080/opspilot. The image sets `HOST=0.0.0.0` so the port mapping works.
+
+Guest mode isn't available inside Docker. The browser's connection reaches the container from the Docker network, not from loopback, so it's refused. Use SSH mode instead.
+
+---
+
+## Security
+
+OpsPilot runs real shell commands, so treat it like an open terminal.
+
+- **Keep it local.** The server binds to `127.0.0.1` by default. Only set `HOST=0.0.0.0` on a network you trust: the API has **no login**, and anyone who can reach it can run commands over SSH.
+- **Guest mode** gives a full shell as your user, but only to browsers on the same machine.
+- **Review AI commands before running them.** The risk analysis is a guide, not a guarantee.
+- **SSH host keys**: quick connect auto-accepts unknown host keys. For servers you care about, use a profile with host key verification set to `ask` or `yes`.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `pip install` fails with 401 / no matching distribution | Use public PyPI: `pip install --index-url https://pypi.org/simple -r requirements.txt` |
+| Page doesn't load | Check the terminal running `app.py` says `Running on http://127.0.0.1:8080`, and use that exact host and port. |
+| `Address already in use` | Another process has port 8080. Start with a different port, e.g. `PORT=8081 python app.py`. |
+| No **Guest Mode** button | Open the page as `127.0.0.1` or `localhost` on the same machine. Guest mode isn't available on Windows, in Docker, or with `OPSPILOT_LOCAL_TERMINAL=false`. |
+| SSH connect fails | Test from your shell first with `ssh -v user@host`. With key auth, the server process must be able to read the key file. |
+| AI requests fail | Set `OPENAI_API_KEY` (and `OPENAI_BASE_URL` for non-OpenAI endpoints) in `.env`, then restart. See [AI provider](#ai-provider). |
+| `NotOpenSSLWarning` / `TripleDES` warnings at startup | Harmless. They come from the system Python and from paramiko. |
+
+---
+
+## Project layout
 
 ```
 OpsPilot/
-├── ai_shell_agent/                    # Core Backend Platform
-│   ├── modules/                       # Advanced Enhancement Modules
-│   │   ├── command_generation/        # Smart Command Generation
-│   │   │   ├── ai_handler.py              # AI command generation
-│   │   │   ├── risk_analyzer.py           # Rule-based risk analysis
-│   │   │   ├── fallback_analyzer.py       # Command failure analysis
-│   │   │   ├── ml_risk_scorer.py          # ML-enhanced risk scoring
-│   │   │   ├── ml_database_manager.py     # Training data management
-│   │   │   └── data_collector.py          # Automatic data collection
-│   │   ├── learning/                  # 🧠 Context-Aware Learning
-│   │   │   └── context_aware_learner.py   # Adaptive command learning
-│   │   ├── monitoring/                # 📊 Real-time Monitoring
-│   │   │   └── real_time_monitor.py       # ML-powered system monitoring
-│   │   ├── prediction/                # 🔮 Failure Prevention
-│   │   │   └── failure_predictor.py       # ML failure prediction
-│   │   ├── orchestration/             # 🌐 Multi-server Coordination
-│   │   │   └── multi_server_coordinator.py # Enterprise orchestration
-│   │   ├── rollback/                  # 🔄 Enhanced Rollback
-│   │   │   └── rollback_manager.py        # Comprehensive recovery
-│   │   ├── security/                  # 🛡️ Security & Compliance
-│   │   │   └── compliance_checker.py      # ML policy validation
-│   │   ├── documentation/             # 📚 Smart Documentation
-│   │   │   └── smart_doc_generator.py     # Automated documentation
-│   │   ├── troubleshooting/           # Intelligent Troubleshooting
-│   │   │   └── troubleshoot_engine.py     # Multi-step error analysis
-│   │   ├── system_awareness/          # System Profiling
-│   │   │   └── system_profiler.py         # OS/system detection
-│   │   ├── ssh/                       # SSH Management
-│   │   │   └── ssh_manager.py             # Connection management
-│   │   └── shared/                    # Shared Utilities
-│   │       └── conversation_memory.py     # Context management
-│   ├── api/                          # REST API Layer
-│   │   ├── endpoints/                 # API Endpoints
-│   │   │   ├── command_generation.py      # Command API endpoints
-│   │   │   ├── monitoring.py              # Monitoring API endpoints
-│   │   │   ├── orchestration.py           # Orchestration API endpoints
-│   │   │   └── troubleshooting.py         # Troubleshooting API endpoints
-│   │   └── middleware/                # API Middleware
-│   │       ├── auth.py                   # Authentication
-│   │       └── rate_limiter.py           # Rate limiting
-│   ├── utils/                        # Core Utilities
-│   │   └── logging_utils.py           # Logging configuration
-│   └── main_runner.py                # CLI Entry Point
-├── frontend/                          # Enhanced Frontend
-│   ├── js/                            # JavaScript Modules
-│   │   ├── main.js                    # Application entry point
-│   │   ├── utils.js                   # Shared utilities
-│   │   ├── commandMode.js            # Command generation UI
-│   │   ├── troubleshootMode.js       # Troubleshooting UI
-│   │   └── terminal.js                # SSH terminal
-│   ├── css/                           # Stylesheets
-│   │   └── main.css                   # Main stylesheet
-│   ├── assets/                        # Static Assets
-│   │   └── icons/                     # UI icons
-│   └── index.html                     # Main HTML
-├── data/                              # Data Storage (Auto-created)
-│   ├── ml_risk_database.db            # ML training data
-│   ├── command_learning.db            # Command learning data
-│   ├── monitoring_metrics.db          # Monitoring data
-│   ├── failure_prediction.db          # Prediction data
-│   └── rollback_operations.db         # Rollback data
-├── models/                            # ML Models (Auto-created)
-│   ├── risk_scorer_models/            # Risk scoring models
-│   ├── command_learning_models/       # Learning models
-│   ├── monitoring_models/             # Anomaly detection models
-│   ├── prediction_models/             # Failure prediction models
-│   └── compliance_models/             # Compliance models
-├── storage/                           # File Storage (Auto-created)
-│   ├── rollback_storage/              # System snapshots
-│   ├── documentation/                 # Generated docs
-│   └── logs/                          # System logs
-├── config/                            # Configuration Files
-│   ├── compliance_policies.json       # Security policies
-│   ├── monitoring_config.json         # Monitoring configuration
-│   └── orchestration_config.json     # Orchestration settings
-├── tests/                             # Comprehensive Test Suite
-│   ├── unit/                          # Unit tests
-│   ├── integration/                   # Integration tests
-│   └── performance/                   # Performance tests
-├── docs/                              # Documentation
-│   ├── API_REFERENCE.md               # Complete API documentation
-│   ├── ARCHITECTURE.md                # System architecture
-│   ├── ML_SYSTEM.md                   # ML system details
-│   └── DEPLOYMENT.md                  # Deployment guide
-├── app.py                             # Flask Application
-├── main.py                            # CLI Entrypoint
-├── requirements.txt                   # Python Dependencies
-├── docker-compose.yml                # Container orchestration
-├── Dockerfile                        # Container definition
-└── README.md                          # This file
+├── app.py                      # Flask + Socket.IO server: REST API, web UI, terminal sessions
+├── main.py                     # CLI entry point
+├── requirements.txt
+├── Dockerfile
+├── ai_shell_agent/
+│   ├── api/endpoints/
+│   │   └── troubleshooting.py  # /troubleshoot/analyze, /suggest-fix, /verify
+│   ├── modules/
+│   │   ├── ssh/                # SSH client, profiles, secrets, host keys, local_terminal.py (guest mode)
+│   │   ├── command_generation/ # AI command generation, risk analysis, ML risk scorer
+│   │   ├── troubleshooting/    # AI troubleshooting and the step workflow
+│   │   ├── system_awareness/   # Server profiling (OS, package/service manager)
+│   │   ├── cicd/               # Jenkins / Ansible integration, build log analysis
+│   │   ├── security/           # Command compliance checks (CIS / NIST / custom)
+│   │   ├── documentation/      # Runbook and guide generation
+│   │   └── shared/             # AI client, conversation memory
+│   ├── utils/prompt_helpers.py
+│   └── data/                   # Created at runtime: profiles, secrets, known_hosts, cicd.db
+├── frontend/                   # Static web UI (no build step; refresh to see edits)
+│   ├── index.html
+│   ├── terminal/terminal.js    # xterm.js terminal over Socket.IO (SSH and guest mode)
+│   ├── chat/                   # Command / troubleshoot chat
+│   ├── cicd/                   # Logs mode
+│   └── shared/                 # Styles, profiles UI, shared state
+├── docs/                       # SSH and CI/CD guides
+└── tools/smoke_imports.py      # Checks that all dependencies and modules import
 ```
 
-## 📡 **Comprehensive API Reference**
-
-### 🧠 Context-Aware Learning APIs
-- **POST /api/v1/learning/suggestions** - Get intelligent command suggestions
-  - Body: `{ "partial_command": "docker", "context": {...}, "user_id": "user123" }`
-  - Returns: `{ "suggestions": [{"command": "docker ps", "confidence": 0.9, "reason": "..."}], ... }`
-
-- **POST /api/v1/learning/record-execution** - Record command execution for learning
-  - Body: `{ "command": "ls -la", "outcome": "success", "context": {...} }`
-  - Returns: `{ "success": true, "learning_updated": true }`
-
-- **GET /api/v1/learning/patterns/{user_id}** - Analyze user's command patterns
-  - Returns: `{ "patterns": {...}, "most_used_commands": [...], "temporal_patterns": {...} }`
-
-- **GET /api/v1/learning/auto-complete** - Get auto-completion suggestions
-  - Query: `?partial_command=dock&user_id=user123`
-  - Returns: `{ "completions": ["docker", "docker-compose", ...] }`
-
-### 📊 Real-time Monitoring APIs
-- **POST /api/v1/monitoring/start** - Start system monitoring
-  - Body: `{ "config": { "collection_interval": 30, "anomaly_detection": true } }`
-  - Returns: `{ "monitoring_id": "mon_123", "status": "running" }`
-
-- **GET /api/v1/monitoring/metrics/current** - Get current system metrics
-  - Returns: `{ "metrics": [...], "timestamp": "...", "health_score": 95 }`
-
-- **GET /api/v1/monitoring/alerts/active** - Get active system alerts
-  - Returns: `{ "alerts": [...], "total_count": 3, "critical_count": 1 }`
-
-- **POST /api/v1/monitoring/thresholds** - Set custom alert thresholds
-  - Body: `{ "metric_pattern": "cpu.usage_percent", "warning": 80, "critical": 95 }`
-  - Returns: `{ "success": true, "threshold_updated": true }`
-
-- **GET /api/v1/monitoring/history/{metric_name}** - Get metric history
-  - Query: `?hours_back=24`
-  - Returns: `{ "history": [...], "trend_analysis": {...} }`
-
-### 🔮 Predictive Failure Prevention APIs
-- **POST /api/v1/prediction/analyze-snapshot** - Analyze system snapshot for failure prediction
-  - Body: `{ "system_snapshot": {...}, "prediction_types": ["disk_space", "memory"] }`
-  - Returns: `{ "predictions": [...], "risk_score": 0.7, "recommended_actions": [...] }`
-
-- **GET /api/v1/prediction/active-predictions** - Get active failure predictions
-  - Returns: `{ "predictions": [...], "critical_count": 2, "total_count": 5 }`
-
-- **POST /api/v1/prediction/train-models** - Train failure prediction models
-  - Body: `{ "days_back": 30, "failure_types": ["disk_space", "memory_exhaustion"] }`
-  - Returns: `{ "training_results": {...}, "model_performance": {...} }`
-
-- **GET /api/v1/prediction/statistics** - Get prediction accuracy statistics
-  - Returns: `{ "accuracy_by_type": {...}, "total_predictions": 150, "prevention_success_rate": 0.85 }`
-
-### 🌐 Multi-server Orchestration APIs
-- **POST /api/v1/orchestration/plans** - Create orchestration plan
-  - Body: `{ "name": "deploy-v2", "servers": [...], "commands": [...], "execution_config": {...} }`
-  - Returns: `{ "plan_id": "plan_123", "risk_assessment": {...}, "execution_phases": [...] }`
-
-- **POST /api/v1/orchestration/plans/{plan_id}/execute** - Execute orchestration plan
-  - Body: `{ "confirm": true, "include_details": false }`
-  - Returns: `{ "execution_id": "exec_123", "status": "running", "phase_count": 3 }`
-
-- **GET /api/v1/orchestration/plans/{plan_id}/risk-assessment** - Get plan risk assessment
-  - Body: `{ "system_context": {...} }`
-  - Returns: `{ "overall_risk_score": 0.4, "command_risks": {...}, "mitigation_suggestions": [...] }`
-
-- **POST /api/v1/orchestration/plans/{plan_id}/simulate** - Simulate plan execution
-  - Returns: `{ "simulation_results": {...}, "estimated_duration": 300, "warnings": [...] }`
-
-- **GET /api/v1/orchestration/execution-history** - Get execution history
-  - Query: `?limit=20`
-  - Returns: `{ "history": [...], "success_rate": 0.92 }`
-
-- **GET /api/v1/orchestration/strategies** - Get available execution strategies
-  - Returns: `{ "strategies": {...}, "dependency_types": {...} }`
-
-### 🔄 Enhanced Rollback APIs
-- **POST /api/v1/rollback/operations/{operation_id}/start** - Start tracking operation
-  - Body: `{ "description": "Database migration", "context": {...} }`
-  - Returns: `{ "success": true, "recovery_point_id": "rp_123" }`
-
-- **POST /api/v1/rollback/operations/{operation_id}/add-step** - Add operation step
-  - Body: `{ "command": "...", "operation_type": "database_operation", "rollback_command": "..." }`
-  - Returns: `{ "step_id": "step_123", "pre_snapshot_id": "snap_456" }`
-
-- **POST /api/v1/rollback/operations/{operation_id}/rollback** - Rollback operation
-  - Body: `{ "recovery_mode": "automatic", "target_step": "step_5", "dry_run": false }`
-  - Returns: `{ "rollback_id": "rb_123", "steps_to_rollback": 3, "estimated_duration": 120 }`
-
-- **POST /api/v1/rollback/recovery-points** - Create recovery point
-  - Body: `{ "description": "Pre-deployment checkpoint", "operation_context": {...} }`
-  - Returns: `{ "recovery_point_id": "rp_789", "snapshots": [...] }`
-
-- **POST /api/v1/rollback/recovery-points/{rp_id}/restore** - Restore to recovery point
-  - Body: `{ "dry_run": false }`
-  - Returns: `{ "success": true, "restored_snapshots": 4, "validation_results": [...] }`
-
-- **GET /api/v1/rollback/operations/{operation_id}/status** - Get operation status
-  - Returns: `{ "total_steps": 5, "executed_steps": 3, "rollback_ready": true, "steps": [...] }`
-
-### 🛡️ Security & Compliance APIs
-- **POST /api/v1/security/check-compliance** - Check command compliance
-  - Body: `{ "command": "rm -rf /", "context": {...}, "user_context": {...} }`
-  - Returns: `{ "compliant": false, "violations": [...], "alternative_commands": [...] }`
-
-- **GET /api/v1/security/policies/{framework}** - Get compliance policies
-  - Returns: `{ "policies": [...], "framework": "SOX", "total_rules": 45 }`
-
-- **POST /api/v1/security/policies/validate** - Validate custom policy
-  - Body: `{ "policy": {...}, "test_commands": [...] }`
-  - Returns: `{ "valid": true, "test_results": [...] }`
-
-### 📚 Smart Documentation APIs
-- **POST /api/v1/documentation/generate** - Generate documentation
-  - Body: `{ "command_sequences": [...], "format": "markdown", "include_risks": true }`
-  - Returns: `{ "documentation": "...", "generated_sections": [...] }`
-
-- **GET /api/v1/documentation/runbooks** - List generated runbooks
-  - Returns: `{ "runbooks": [...], "total_count": 12 }`
-
-- **POST /api/v1/documentation/troubleshooting-guide** - Generate troubleshooting guide
-  - Body: `{ "error_patterns": [...], "historical_data": {...} }`
-  - Returns: `{ "guide": "...", "solution_patterns": [...] }`
-
-### Legacy Core APIs (Enhanced)
-- **POST /ask** - Enhanced command generation with all modules
-  - Body: `{ "prompt": "deploy to production", "context": {...} }`
-  - Returns: `{ "ai_command": "...", "risk_analysis": {...}, "compliance_check": {...}, "suggestions": [...] }`
-
-- **POST /run** - Execute with comprehensive monitoring and rollback
-  - Body: `{ "host": "server1", "username": "admin", "command": "...", "create_rollback_point": true }`
-  - Returns: `{ "output": "...", "monitoring_data": {...}, "rollback_info": {...} }`
-
-- **POST /troubleshoot** - Enhanced troubleshooting with ML prediction
-  - Body: `{ "error_text": "...", "system_context": {...} }`
-  - Returns: `{ "analysis": "...", "failure_predictions": [...], "preventive_actions": [...] }`
-
-### WebSocket Events (Enhanced Terminal)
-- `start_ssh` - Start monitored SSH session
-- `terminal_input` - Send keystrokes with learning
-- `terminal_output` - Receive output with analysis
-- `system_alert` - Real-time system alerts
-- `prediction_alert` - Failure prediction alerts
-- `compliance_warning` - Security compliance warnings
-- `resize` - Update terminal size
-- `disconnect` - Close session with cleanup
-
-## 🏢 **Enterprise Architecture**
-
-### 📝 **System Architecture Overview**
-
-OpsPilot follows a **modular, microservice-inspired architecture** with clear separation of concerns:
-
-```
-┌─────────────────────────────────────────────┐
-│              Frontend (Web UI)                 │
-│  React-like Components + WebSocket Terminal    │
-└────────────────┬─────────────────────────────┘
-                 │
-┌────────────────┴─────────────────────────────┐
-│              REST API Layer                   │
-│     Flask + SocketIO + Authentication        │
-└────────────────┬─────────────────────────────┘
-                 │
-┌────────────────┴─────────────────────────────┐
-│        Enhancement Modules (7 Core)          │
-├───────────────┬───────────────┬───────────────┤
-│ Learning      │ Monitoring    │ Prediction  │
-├───────────────┼───────────────┼───────────────┤
-│ Orchestration │ Rollback      │ Security    │
-└───────────────┴───────────────┴───────────────┘
-                 │
-┌────────────────┴─────────────────────────────┐
-│               Data Layer                     │
-│   SQLite DBs + ML Models + File Storage     │
-└─────────────────────────────────────────────┘
-```
-
-### 🧠 **Enhancement Modules Architecture**
-
-#### **Context-Aware Learning** (`ai_shell_agent/modules/learning/`)
-- **Pattern Analysis Engine**: TF-IDF vectorization + K-means clustering
-- **Behavioral Modeling**: Statistical analysis of user command patterns
-- **Contextual Recommendation**: Real-time feature extraction and matching
-- **Learning Database**: SQLite with optimized indexing for pattern queries
-- **Auto-completion Engine**: Efficient prefix matching with confidence scoring
-
-#### **Real-time Monitoring** (`ai_shell_agent/modules/monitoring/`)
-- **Metric Collection**: Multi-threaded psutil-based system monitoring
-- **Anomaly Detection**: Isolation Forest models per metric type
-- **Alert Engine**: Intelligent threshold-based + ML-based alerting
-- **Data Pipeline**: Streaming data processing with sliding windows
-- **Health Scoring**: Weighted composite health score calculation
-
-#### **Predictive Prevention** (`ai_shell_agent/modules/prediction/`)
-- **Feature Engineering**: Advanced temporal and statistical feature extraction
-- **Ensemble Models**: Random Forest + Gradient Boosting + Logistic Regression
-- **Prediction Engine**: Multi-model voting with confidence weighting
-- **Prevention Actions**: Automated safe action execution framework
-- **Performance Tracking**: Cross-validation and ROC AUC monitoring
-
-#### **Multi-server Orchestration** (`ai_shell_agent/modules/orchestration/`)
-- **Dependency Resolution**: Topological sorting with cycle detection
-- **Execution Strategies**: Pluggable execution pattern implementations
-- **Risk Assessment**: ML-enhanced multi-server risk analysis
-- **Connection Pooling**: Efficient SSH connection management and reuse
-- **Progress Tracking**: Real-time execution monitoring with callbacks
-
-#### **Enhanced Rollback** (`ai_shell_agent/modules/rollback/`)
-- **Snapshot Engine**: Multi-type snapshots with compression and deduplication
-- **Recovery Points**: Comprehensive system state capture and restoration
-- **Operation Tracking**: Detailed step-by-step execution history
-- **Auto-rollback Generation**: Intelligent rollback command synthesis
-- **Validation Framework**: Post-rollback verification and health checks
-
-#### **Security & Compliance** (`ai_shell_agent/modules/security/`)
-- **Policy Engine**: Multi-framework compliance rule evaluation
-- **Contextual Analysis**: Environment and role-aware policy enforcement
-- **ML Learning**: Adaptive policy enforcement based on historical decisions
-- **Alternative Generation**: Compliant command alternative suggestions
-- **Audit System**: Comprehensive compliance logging and reporting
-
-#### **Smart Documentation** (`ai_shell_agent/modules/documentation/`)
-- **Pattern Recognition**: Command sequence analysis and clustering
-- **Template System**: Configurable documentation template engine
-- **Multi-format Output**: Markdown, JSON, HTML, and plain text generation
-- **Risk Integration**: Automated risk assessment documentation
-- **Version Control**: Documentation versioning and change tracking
-
-### 🗺️ **Data Flow Architecture**
-
-```
-User Request → API Gateway → Module Router → Enhancement Modules
-     │                                               │
-     v                                               v
-WebSocket → Terminal Handler → SSH Executor → Data Collector
-     │                                               │
-     v                                               v
-ML Pipeline → Risk Assessment → Compliance Check → Response
-```
-
-### 🔌 **Integration Architecture**
-
-- **Event-Driven**: Callback-based integration between modules
-- **Plugin System**: Modular architecture allows independent module usage
-- **Data Sharing**: Shared context and learning across all modules
-- **API First**: RESTful APIs for all module functionality
-- **Async Processing**: Non-blocking operations with threading and async/await
-
-### 📦 **Legacy Core Modules** (Backward Compatible)
-
-#### **Smart Command Generation** (`ai_shell_agent/modules/command_generation/`)
-- **AI Command Generation**: GPT-4o-mini with temperature 0.3 for consistent commands
-- **ML Risk Scoring**: Machine learning model learns from execution outcomes
-- **Risk Analysis**: Multi-layered risk assessment with rule-based + ML predictions
-- **Failure Analysis**: Intelligent analysis of failed commands with alternatives
-- **Auto Data Collection**: Seamless integration for continuous learning
-
-#### **Intelligent Troubleshooting** (`ai_shell_agent/modules/troubleshooting/`)
-- **Error Pattern Recognition**: AI analyzes error patterns with historical context
-- **Multi-step Remediation**: Diagnostics → Fixes → Verification workflow
-- **System-Aware Solutions**: Tailored fixes based on server profiling
-- **Risk-Assessed Actions**: ML-enhanced risk evaluation for fix commands
-- **Alternative Suggestions**: Multiple solution paths with success probability
-
-#### **System Awareness** (`ai_shell_agent/modules/system_awareness/`)
-- **Server Profiling**: Auto-detects OS, package managers, service managers
-- **Context Management**: Maintains system state and capabilities
-- **Command Optimization**: Tailors commands to specific system configurations
-- **Performance Monitoring**: Tracks system resources for intelligent decisions
-
-#### **SSH Management** (`ai_shell_agent/modules/ssh/`)
-- SSH client creation and management with automatic data collection
-- Command execution over SSH with timing and outcome tracking
-- Session management endpoints
-
-#### **Shared Utilities** (`ai_shell_agent/modules/shared/`)
-- Conversation memory (max 20 entries) with learning integration
-- Utility functions (path normalization, data validation, etc.)
-
-### 🗺️ **Frontend Architecture**
-
-- **main.js** - Application entry point and event listeners
-- **utils.js** - Shared state and utilities
-- **terminal.js** - SSH terminal functionality  
-- **commandMode.js** - Command generation UI
-- **troubleshootMode.js** - Troubleshooting UI
-
-## 🔧 **Enterprise Technology Stack**
-
-### 🚀 **Backend Technologies**
-
-#### **Core Framework**
-- **Python 3.10+** with asyncio for high-performance asynchronous operations
-- **Flask** for REST API endpoints with modular blueprint architecture
-- **Flask-SocketIO** for real-time WebSocket communication and live updates
-- **Celery** (future) for distributed task processing
-
-#### **AI & Machine Learning**
-- **OpenAI GPT-4o-mini** for AI command generation (temperature 0.3)
-- **scikit-learn** for comprehensive ML model pipeline
-  - Random Forest, Gradient Boosting, Logistic Regression
-  - Isolation Forest for anomaly detection
-  - TF-IDF vectorization and K-means clustering
-- **numpy** & **pandas** for advanced data processing
-- **joblib** for model persistence and optimization
-
-#### **Data & Storage**
-- **SQLite** with optimized indexing for development/small deployments
-- **PostgreSQL** support for enterprise deployments
-- **Redis** (future) for caching and session management
-- **JSON** for configuration and lightweight data exchange
-
-#### **System Integration**
-- **Paramiko** for robust SSH client connections with connection pooling
-- **psutil** for comprehensive system monitoring and resource tracking
-- **threading** & **concurrent.futures** for multi-threaded operations
-- **subprocess** for secure local command execution
-
-#### **Security & Compliance**
-- **cryptography** for encryption and secure data handling
-- **hashlib** for secure hashing and validation
-- **JWT** (future) for authentication and authorization
-
-### 🎨 **Frontend Technologies**
-
-#### **Core Technologies**
-- **Modern JavaScript (ES2020+)** with async/await patterns
-- **HTML5** semantic markup with ARIA accessibility compliance
-- **CSS3** with custom properties, flexbox, and grid layouts
-- **Progressive Web App (PWA)** capabilities
-
-#### **Real-time Communication**
-- **Socket.IO client** for bidirectional real-time communication
-- **WebSocket** native support for low-latency connections
-- **Fetch API** for modern HTTP request handling
-
-#### **Terminal & UI**
-- **Xterm.js** for professional terminal emulation
-- **Chart.js** (future) for monitoring visualizations
-- **CodeMirror** (future) for syntax highlighting
-
-### 🛠️ **DevOps & Deployment**
-
-- **Docker** containerization support
-- **pytest** for comprehensive testing framework
-- **Black** & **isort** for code formatting
-- **flake8** for code linting and quality assurance
-
-## 🎯 Usage
-
-### Web Interface
-
-1. Navigate to `http://localhost:8080/opspilot`
-2. Enter SSH credentials (host, username)
-3. Choose mode:
-   - **Command Mode**: Generate commands from natural language
-   - **Troubleshoot Mode**: Analyze and fix errors
-
-### Smart Command Mode
-1. Type natural language request: "list all files"
-2. AI generates command with ML-enhanced risk analysis: `ls -la`
-3. Review risk warnings and safety recommendations
-4. Confirm to execute (decision is automatically learned from)
-5. System learns from execution outcome to improve future predictions
-
-### Intelligent Troubleshoot Mode
-1. Paste error message: "nginx: bind() failed"
-2. AI analyzes with system context and creates smart remediation plan:
-   - **Root Cause Analysis**: Pattern recognition from historical data
-   - **Diagnostic Commands**: System-aware discovery commands
-   - **Fix Commands**: ML risk-assessed repair actions
-   - **Verification Commands**: Comprehensive validation steps
-   - **Alternative Solutions**: Multiple approaches with success probability
-3. Execute steps with intelligent confirmation and automatic learning
-
-## 🔐 Security & Privacy
-
-- **Smart Risk Assessment**: ML-enhanced security analysis of commands
-- **Behavioral Learning**: Adapts to user patterns while maintaining security
-- **Local Data Storage**: All ML training data stays on your system (SQLite)
-- **SSH Security**: Key-based or password authentication with session management
-- **Intelligent Confirmations**: Context-aware warnings for risky operations
-- **Privacy Protection**: No command data sent to external services beyond OpenAI
-- **API Key Security**: Protected OpenAI integration with rate limiting
-
-## 🧠 ML Quick Start
-
-### Automatic Learning
-The ML system starts learning **immediately** - no setup required!
-
-1. **Use Commands**: Every command generates training data
-2. **Interact with Warnings**: User decisions improve risk assessment  
-3. **System Learns**: ML model automatically adapts to your patterns
-
-### First Training Session
-After ~50 command executions:
-```bash
-curl -X POST http://localhost:8080/ml/train
-```
-
-### Check ML Status
-```bash
-curl http://localhost:8080/ml/status
-```
-
-### Export Training Data (Optional)
-```python
-from ai_shell_agent.modules.command_generation.ml_database_manager import MLDatabaseManager
-db = MLDatabaseManager()
-db.export_training_data("my_training_data.csv")
-```
-
-## 📝 Notes
-
-- **AI Provider**: OpenAI GPT-4o-mini (Bosch internal endpoint)
-- **ML Data**: Stored locally in SQLite (`data/ml_risk_database.db`)
-- **Privacy**: All learning data stays on your system
-- **Performance**: ML training is lightweight and fast
-- **Scalability**: Handles thousands of commands efficiently
-- To change AI provider, update `ai_shell_agent/modules/*/ai_handler.py`
-- See `ML_DATA_FLOW.md` for detailed ML system documentation
+---
+
+## API reference
+
+The web UI uses these endpoints. They're also handy for scripting.
+
+**Terminal (Socket.IO events)**
+- `start_local` starts a guest-mode local shell.
+- `start_ssh` starts an SSH session: `{ip, user, password}` or `{profileId}`.
+- `terminal_input` sends keystrokes: `{input}`.
+- `resize` resizes the terminal: `{cols, rows}`.
+- The server emits `terminal_output` with `{output}`.
+
+**Commands**
+- `POST /ask` turns a description into a command: `{prompt}`.
+- `POST /run` runs one command over SSH: `{host, username, password?, port?, command}`.
+- `POST /analyze-failure` analyzes a failed command.
+- `GET /guest/status` reports whether guest mode is available to this browser.
+
+**Troubleshooting**
+- `POST /troubleshoot` builds a multi-step plan from `{error_text, host, username, context?}`.
+- `POST /troubleshoot/execute` runs diagnostic, fix or verification commands.
+- `POST /troubleshoot/analyze`, `/troubleshoot/suggest-fix` and `/troubleshoot/verify` are used by the chat UI.
+
+**SSH profiles**
+- `GET /ssh/list`
+- `POST /ssh/save`
+- `POST /ssh/test`
+- `DELETE /ssh/delete/<id>`
+
+**Server profiling**
+- `POST /profile`
+- `GET /profile/summary`
+- `GET /profile/suggestions/<category>`
+
+**CI/CD**: Jenkins and Ansible config, console fetch and AI analysis are under `/cicd/*`. See [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md).
+
+**Other**
+- `/ml/train`, `/ml/status` and `/ml/feedback` for the risk-scoring model (see [ML_DATA_FLOW.md](ML_DATA_FLOW.md)).
+- `/security/*` for compliance checks.
+- `/documentation/*` for generated runbooks.
+
+---
+
+## Development
+
+- Edits to `frontend/` show up when you refresh the browser. Python changes need a server restart.
+- Smoke-test imports after changing dependencies: `python tools/smoke_imports.py`
+- More docs: [SETUP_GUIDE.md](SETUP_GUIDE.md) (step-by-step setup), [docs/SSH.md](docs/SSH.md), [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md), [CICD_SETUP_GUIDE.md](CICD_SETUP_GUIDE.md), [ML_DATA_FLOW.md](ML_DATA_FLOW.md).

@@ -1321,7 +1321,7 @@ def fetch_console_from_url():
         import re
         
         # Extract job details from URL
-        # Example: https://jenkins.example.com:9005/tools/jenkins/job/Ansible%20BCN/job/ncg3kor/1204/console
+        # Example: https://jenkins.example.com/job/my-folder/job/my-job/1204/console
         url_pattern = r'/job/([^/]+)(?:/job/([^/]+))*/([0-9]+)/console'
         match = re.search(url_pattern, console_url)
         

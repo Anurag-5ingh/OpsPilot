@@ -1,5 +1,7 @@
 # OpsPilot Enhanced SSH Authentication Guide
 
+> **Just want to try OpsPilot without a server?** Use **Guest Mode (Local Terminal)** on the login card. It opens a shell on your own machine, with no SSH setup (macOS/Linux). See the [README](../README.md#guest-mode-local-terminal).
+
 ## Overview
 
 OpsPilot now supports advanced SSH authentication methods beyond simple password authentication. This enhanced system provides:
