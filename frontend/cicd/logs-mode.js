@@ -447,7 +447,7 @@ class LogsMode {
                 const output = document.getElementById('console-output');
                 if (output) {
                     console.log('Setting console output, length:', data.console_log.length); // Debug log
-                    output.textContent = this.escapeHtml(data.console_log);
+                    output.textContent = data.console_log;
                 } else {
                     console.error('Could not find console-output element');
                 }
@@ -580,7 +580,7 @@ class LogsMode {
         // Update console output
         const output = document.getElementById('console-output');
         if (output) {
-            output.textContent = this.escapeHtml(logData.console_log);
+            output.textContent = logData.console_log;
         }
 
         // Store log data for analysis

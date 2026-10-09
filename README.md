@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Anurag-5ingh/OpsPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Anurag-5ingh/OpsPilot/actions/workflows/ci.yml)
 
+**Live demo:** https://anurag-5ingh.github.io/OpsPilot/app/ (the real UI with a simulated terminal and sample AI answers, runs entirely in your browser)
+
 **Project page:** https://anurag-5ingh.github.io/OpsPilot/
 
 OpsPilot is an AI DevOps assistant in your browser. It gives you a live terminal next to an AI chat: describe what you want in plain English, get a shell command back, and run it in the terminal. It also walks you through troubleshooting errors and analyzes Jenkins build logs.

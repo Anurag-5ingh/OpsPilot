@@ -118,3 +118,6 @@ config.local.*
 
 # WSL
 *.wslconfig
+
+# Built GitHub Pages site (demo/build.sh)
+_site/
